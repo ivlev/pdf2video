@@ -1,0 +1,28 @@
+package config
+
+type Config struct {
+	InputPDF       string
+	OutputVideo    string
+	TotalDuration  float64
+	Width          int
+	Height         int
+	FPS            int
+	Workers        int
+	FadeDuration   float64
+	TransitionType string
+	ZoomMode       string
+	ZoomSpeed      float64
+	DPI            int
+	AudioPath      string
+	Preset         string
+}
+
+type SegmentParams struct {
+	Width, Height int
+	FPS           int
+	Duration      float64
+	ZoomMode      string
+	ZoomSpeed     float64
+	FadeDuration  float64
+	PageIndex     int
+}
