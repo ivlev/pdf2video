@@ -54,8 +54,10 @@ type Config struct {
 	FadeDuration   float64
 	TransitionType string
 	ZoomMode       string
+	ZoomSpeed      float64
 	DPI            int
 	AudioPath      string
+	Preset         string
 }
 
 type SegmentParams struct {
@@ -63,6 +65,7 @@ type SegmentParams struct {
 	FPS           int
 	Duration      float64
 	ZoomMode      string
+	ZoomSpeed     float64
 	FadeDuration  float64
 	PageIndex     int
 }
@@ -151,12 +154,6 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 	pageDuration := params.TotalDuration / float64(len(segmentPaths))
 	fadeDuration := params.FadeDuration
 
-	// Защита от слишком длинного перехода: он не может быть дольше самой страницы
-	if fadeDuration >= pageDuration {
-		fadeDuration = pageDuration / 3.0
-		fmt.Printf("[!] Переход слишком длинный для страницы %.2fs. Уменьшен до %.2fs\n", pageDuration, fadeDuration)
-	}
-
 	args := []string{"-y"}
 	for _, p := range segmentPaths {
 		args = append(args, "-i", p)
@@ -205,11 +202,11 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 type DefaultEffect struct{}
 
 func (e *DefaultEffect) GenerateFilter(p SegmentParams) string {
-	// Логика выбора направления зума
+	// 1. Логика выбора направления зума
 	mode := strings.ToLower(p.ZoomMode)
-	if mode == "random" {
+	if mode == "random" || mode == "out-random" {
 		modes := []string{"center", "top-left", "top-right", "bottom-left", "bottom-right"}
-		r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(p.PageIndex)))
+		r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(p.PageIndex*99)))
 		mode = modes[r.Intn(len(modes))]
 	}
 
@@ -227,14 +224,47 @@ func (e *DefaultEffect) GenerateFilter(p SegmentParams) string {
 		zoomX, zoomY = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
 	}
 
+	// 2. Рассчитываем тайминги в кадрах (для стабильной анимации PNG используем 'on')
+	fFPS := float64(p.FPS)
+	fTotal := p.Duration * fFPS
+	fFade := p.FadeDuration * fFPS
+	fActive := fTotal - fFade
+	if fActive <= 0 {
+		fActive = fTotal
+	}
+
+	// Точка смены направления (peak)
+	// zoom_diff = 0.5 (от 1.0 до 1.5). frames_to_hit = 0.5 / ZoomSpeed
+	zSpeed := p.ZoomSpeed
+	if zSpeed <= 0 {
+		zSpeed = 0.001
+	}
+
+	onPeak := 0.5 / zSpeed
+	// Ограничиваем пик половиной активного времени, чтобы успеть вернуться
+	if onPeak > fActive/2 {
+		onPeak = fActive / 2
+	}
+
+	actualPeak := 1.0 + (zSpeed * onPeak)
+	if actualPeak > 1.5 {
+		actualPeak = 1.5
+		onPeak = 0.5 / zSpeed
+	}
+
+	// Формула "Дыхания": плавно до peak, затем плавно возврат к 1.0 до начала xfade
+	// FFmpeg zoompan formula:
+	zFormula := fmt.Sprintf("if(lte(on,%f), 1.0+(%f*on), if(lte(on,%f), %f-(%f-1.0)*(on-%f)/(%f-%f), 1.0))",
+		onPeak, zSpeed, fActive, actualPeak, actualPeak, onPeak, fActive, onPeak)
+
 	aspectFilter := fmt.Sprintf(
 		"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2",
 		p.Width*2, p.Height*2, p.Width*2, p.Height*2,
 	)
 
 	zoomFilter := fmt.Sprintf(
-		"zoompan=z='min(zoom+0.0008,1.5)':d=%d:s=%dx%d:x='%s':y='%s'",
-		int(p.Duration*float64(p.FPS)), p.Width, p.Height, zoomX, zoomY,
+		"zoompan=z='%s':d=%d:s=%dx%d:x='%s':y='%s'",
+		zFormula, int(fTotal), p.Width, p.Height, zoomX, zoomY,
 	)
 
 	return fmt.Sprintf("%s,%s,scale=%d:%d", aspectFilter, zoomFilter, p.Width, p.Height)
@@ -271,6 +301,12 @@ func (p *VideoProject) Run() error {
 
 	pageCount := p.PDF.PageCount()
 	pageDuration := p.Config.TotalDuration / float64(pageCount)
+
+	// Коррекция FadeDuration для коротких слайдов
+	if p.Config.FadeDuration >= pageDuration {
+		p.Config.FadeDuration = pageDuration / 3.0
+		fmt.Printf("[!] Переход уменьшен до %.2fs для соответствия слайдам\n", p.Config.FadeDuration)
+	}
 
 	// Авто-пропорции
 	if p.Config.Width == 1280 && p.Config.Height == 720 {
@@ -321,6 +357,7 @@ func (p *VideoProject) Run() error {
 					FPS:          p.Config.FPS,
 					Duration:     pageDuration,
 					ZoomMode:     p.Config.ZoomMode,
+					ZoomSpeed:    p.Config.ZoomSpeed,
 					FadeDuration: p.Config.FadeDuration,
 					PageIndex:    i,
 				}
@@ -494,12 +531,24 @@ func main() {
 	workersPtr := flag.Int("workers", runtime.NumCPU(), "Потоки")
 	fadePtr := flag.Float64("fade", 0.5, "Длительность перехода (сек)")
 	transitionPtr := flag.String("transition", "fade", "Тип перехода xfade: fade, wipeleft, slideup, pixelize, circlecrop, dissolve, none")
-	zoomPtr := flag.String("zoom-mode", "center", "Зум: center, top-left, top-right, bottom-left, bottom-right, random")
+	zoomPtr := flag.String("zoom-mode", "center", "Зум: center, top-left, top-right, bottom-left, bottom-right, random, out-center, out-random")
+	zoomSpeedPtr := flag.Float64("zoom-speed", 0.001, "Скорость зума (например, 0.001)")
 	dpiPtr := flag.Int("dpi", 300, "DPI")
 	audioPtr := flag.String("audio", "", "Путь к аудио (по умолчанию: самый свежий файл в input/audio/)")
 	audioSyncPtr := flag.Bool("audio-sync", true, "Синхронизировать длительность видео с аудио")
+	presetPtr := flag.String("preset", "", "Пресет формата: 16:9, 9:16 (Shorts/TikTok), 4:5 (Instagram)")
 
 	flag.Parse()
+
+	width, height := *widthPtr, *heightPtr
+	switch *presetPtr {
+	case "16:9":
+		width, height = 1280, 720
+	case "9:16":
+		width, height = 720, 1280
+	case "4:5":
+		width, height = 1080, 1350
+	}
 
 	inputPath := *inputPtr
 	if inputPath == "" {
@@ -565,15 +614,17 @@ func main() {
 		InputPDF:       inputPath,
 		OutputVideo:    finalOutput,
 		TotalDuration:  totalDuration,
-		Width:          *widthPtr,
-		Height:         *heightPtr,
+		Width:          width,
+		Height:         height,
 		FPS:            *fpsPtr,
 		Workers:        *workersPtr,
 		FadeDuration:   *fadePtr,
 		TransitionType: *transitionPtr,
 		ZoomMode:       *zoomPtr,
+		ZoomSpeed:      *zoomSpeedPtr,
 		DPI:            *dpiPtr,
 		AudioPath:      audioPath,
+		Preset:         *presetPtr,
 	}
 
 	pdf, err := NewFitzPDFSource(cfg.InputPDF)

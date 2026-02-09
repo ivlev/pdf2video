@@ -27,5 +27,4 @@ input/pdf/
 input/video/
 
 # Project Management
-ROADMAP.md
-ARCHITECTURE.md
+project_meta/
