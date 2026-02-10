@@ -11,22 +11,22 @@ import (
 
 	"github.com/ivlev/pdf2video/internal/config"
 	"github.com/ivlev/pdf2video/internal/effects"
-	"github.com/ivlev/pdf2video/internal/pdf"
+	"github.com/ivlev/pdf2video/internal/source"
 	"github.com/ivlev/pdf2video/internal/video"
 )
 
 type VideoProject struct {
 	Config  *config.Config
-	PDF     pdf.PDFSource
+	Source  source.Source
 	Encoder video.VideoEncoder
 	Effect  effects.Effect
 	tempDir string
 }
 
-func NewVideoProject(cfg *config.Config, pdfDoc pdf.PDFSource, ve video.VideoEncoder, eff effects.Effect) *VideoProject {
+func NewVideoProject(cfg *config.Config, src source.Source, ve video.VideoEncoder, eff effects.Effect) *VideoProject {
 	return &VideoProject{
 		Config:  cfg,
-		PDF:     pdfDoc,
+		Source:  src,
 		Encoder: ve,
 		Effect:  eff,
 	}
@@ -40,7 +40,7 @@ func (p *VideoProject) Run() error {
 	}
 	defer os.RemoveAll(p.tempDir)
 
-	pageCount := p.PDF.PageCount()
+	pageCount := p.Source.PageCount()
 	pageDuration := p.Config.TotalDuration / float64(pageCount)
 
 	if p.Config.FadeDuration >= pageDuration {
@@ -49,9 +49,9 @@ func (p *VideoProject) Run() error {
 	}
 
 	if p.Config.Width == 1280 && p.Config.Height == 720 {
-		pdfW, pdfH, err := p.PDF.GetPageDimensions(0)
+		srcW, srcH, err := p.Source.GetPageDimensions(0)
 		if err == nil {
-			p.Config.Width = int(float64(p.Config.Height) * (pdfW / pdfH))
+			p.Config.Width = int(float64(p.Config.Height) * (srcW / srcH))
 			if p.Config.Width%2 != 0 {
 				p.Config.Width++
 			}
@@ -59,7 +59,7 @@ func (p *VideoProject) Run() error {
 	}
 
 	fmt.Println("--- [PROJECT: MODULAR ENGINE] ---")
-	fmt.Printf("[*] Файл: %s | Страниц: %d\n", p.Config.InputPDF, pageCount)
+	fmt.Printf("[*] Источник: %s | Кадров/Страниц: %d\n", p.Config.InputPath, pageCount)
 	fmt.Printf("[*] Разрешение: %dx%d @ %d FPS | DPI: %d\n", p.Config.Width, p.Config.Height, p.Config.FPS, p.Config.DPI)
 	fmt.Println("-----------------------------")
 
@@ -77,7 +77,7 @@ func (p *VideoProject) Run() error {
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				img, err := p.PDF.RenderPage(i, p.Config.DPI)
+				img, err := p.Source.RenderPage(i, p.Config.DPI)
 				if err != nil {
 					log.Printf("[!] Error page %d: %v", i, err)
 					continue
