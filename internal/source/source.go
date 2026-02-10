@@ -1,4 +1,4 @@
-package pdf
+package source
 
 import (
 	"image"
@@ -6,7 +6,7 @@ import (
 	"github.com/gen2brain/go-fitz"
 )
 
-type PDFSource interface {
+type Source interface {
 	PageCount() int
 	GetPageDimensions(index int) (width, height float64, err error)
 	RenderPage(index int, dpi int) (image.Image, error)

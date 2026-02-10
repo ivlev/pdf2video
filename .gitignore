@@ -12,6 +12,8 @@ Thumbs.db
 # Go
 /pdf2video
 /bin/
+/main
+/make_video
 go.work
 
 # Source Data (PDFs)
@@ -25,6 +27,7 @@ output/
 input/audio/
 input/pdf/
 input/video/
+input/images/
 
 # Project Management
 project_meta/

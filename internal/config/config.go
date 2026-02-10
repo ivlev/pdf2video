@@ -1,7 +1,7 @@
 package config
 
 type Config struct {
-	InputPDF       string
+	InputPath      string
 	OutputVideo    string
 	TotalDuration  float64
 	Width          int

@@ -116,3 +116,58 @@ func GetAudioDuration(path string) (float64, error) {
 
 	return duration, nil
 }
+
+func FindLatestImage(path string) (string, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+
+	var searchDir string
+	if fi.IsDir() {
+		searchDir = path
+	} else {
+		// Если это файл, берем его директорию, чтобы найти самый свежий в ней (согласно логике ТЗ)
+		// Хотя если указан конкретный файл, возможно стоит вернуть его.
+		// Но ТЗ говорит "имя файла изображения с самой поздней датой", если используются изображения.
+		searchDir = filepath.Dir(path)
+	}
+
+	files, err := os.ReadDir(searchDir)
+	if err != nil {
+		return "", err
+	}
+
+	extensions := []string{".jpg", ".jpeg", ".png"}
+	var latestFile string
+	var latestTime time.Time
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		isImage := false
+		for _, ext := range extensions {
+			if strings.HasSuffix(strings.ToLower(f.Name()), ext) {
+				isImage = true
+				break
+			}
+		}
+		if isImage {
+			info, err := f.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(latestTime) {
+				latestTime = info.ModTime()
+				latestFile = filepath.Join(searchDir, f.Name())
+			}
+		}
+	}
+
+	if latestFile == "" {
+		return "", fmt.Errorf("в папке %s не найдено изображений", searchDir)
+	}
+
+	return latestFile, nil
+}
