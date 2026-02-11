@@ -171,3 +171,28 @@ func FindLatestImage(path string) (string, error) {
 
 	return latestFile, nil
 }
+func GetBestH264Encoder() (string, string) {
+	// Приоритеты:
+	// 1. MacOS (VideoToolbox)
+	// 2. NVIDIA (NVENC)
+	// 3. Intel/Linux (VAAPI - требует доп. настройки, пока пропустим или добавим позже)
+	// 4. Software (libx264)
+
+	encoders := []struct {
+		name string
+		args string
+	}{
+		{"h264_videotoolbox", ""},
+		{"h264_nvenc", ""},
+	}
+
+	for _, enc := range encoders {
+		cmd := exec.Command("ffmpeg", "-encoders")
+		out, err := cmd.CombinedOutput()
+		if err == nil && strings.Contains(string(out), enc.name) {
+			return enc.name, enc.args
+		}
+	}
+
+	return "libx264", ""
+}

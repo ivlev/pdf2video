@@ -121,16 +121,21 @@ func (p *VideoProject) Run() error {
 
 				filter := p.Effect.GenerateFilter(params)
 
-				cmd := exec.Command("ffmpeg", "-y",
-					"-i", imgPath,
-					"-vf", filter,
-					"-t", fmt.Sprintf("%f", duration),
-					"-r", fmt.Sprintf("%d", p.Config.FPS),
-					"-pix_fmt", "yuv420p",
-					"-c:v", "libx264",
-					"-preset", "medium",
-					segPath,
-				)
+				qualityArgs := []string{}
+				switch p.Config.VideoEncoder {
+				case "h264_videotoolbox":
+					qualityArgs = append(qualityArgs, "-q:v", fmt.Sprintf("%d", p.Config.Quality))
+				case "h264_nvenc":
+					qualityArgs = append(qualityArgs, "-cq", fmt.Sprintf("%d", p.Config.Quality))
+				default: // libx264
+					qualityArgs = append(qualityArgs, "-crf", fmt.Sprintf("%d", p.Config.Quality), "-preset", "medium")
+				}
+
+				ffmpegArgs := []string{"-y", "-i", imgPath, "-vf", filter, "-t", fmt.Sprintf("%f", duration), "-r", fmt.Sprintf("%d", p.Config.FPS), "-pix_fmt", "yuv420p", "-c:v", p.Config.VideoEncoder}
+				ffmpegArgs = append(ffmpegArgs, qualityArgs...)
+				ffmpegArgs = append(ffmpegArgs, segPath)
+
+				cmd := exec.Command("ffmpeg", ffmpegArgs...)
 
 				if out, err := cmd.CombinedOutput(); err != nil {
 					log.Printf("[!] FFmpeg error page %d: %v\nLog: %s", i, err, string(out))

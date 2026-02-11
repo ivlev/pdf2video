@@ -85,7 +85,19 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 		args = append(args, "-map", fmt.Sprintf("%d:a", audioIndex), "-shortest")
 	}
 
-	args = append(args, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", finalPath)
+	qualityArgs := []string{}
+	switch params.VideoEncoder {
+	case "h264_videotoolbox":
+		qualityArgs = append(qualityArgs, "-q:v", fmt.Sprintf("%d", params.Quality))
+	case "h264_nvenc":
+		qualityArgs = append(qualityArgs, "-cq", fmt.Sprintf("%d", params.Quality))
+	default: // libx264
+		qualityArgs = append(qualityArgs, "-crf", fmt.Sprintf("%d", params.Quality), "-preset", "medium")
+	}
+
+	args = append(args, "-c:v", params.VideoEncoder, "-pix_fmt", "yuv420p")
+	args = append(args, qualityArgs...)
+	args = append(args, finalPath)
 
 	cmd := exec.Command("ffmpeg", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {

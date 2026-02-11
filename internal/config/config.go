@@ -16,6 +16,8 @@ type Config struct {
 	AudioPath      string
 	Preset         string
 	PageDurations  []float64
+	VideoEncoder   string
+	Quality        int
 }
 
 type SegmentParams struct {

@@ -44,6 +44,7 @@ func main() {
 	audioPtr := flag.String("audio", "", "Путь к аудио (по умолчанию: самый свежий файл в input/audio/)")
 	audioSyncPtr := flag.Bool("audio-sync", true, "Синхронизировать длительность видео с аудио")
 	presetPtr := flag.String("preset", "", "Пресет формата: 16:9, 9:16 (Shorts/TikTok), 4:5 (Instagram)")
+	qualityPtr := flag.Int("quality", 0, "Качество видео (0 - авто, иначе: x264=1-51(CRF), VideoToolbox=0-100)")
 
 	flag.Parse()
 
@@ -139,6 +140,23 @@ func main() {
 		finalOutput = filepath.Join("output", fmt.Sprintf("%s_%s.mp4", cleanName, timestamp))
 	}
 
+	encoderName, _ := system.GetBestH264Encoder()
+	if encoderName != "libx264" {
+		fmt.Printf("[*] Обнаружено аппаратное ускорение: %s\n", encoderName)
+	}
+
+	quality := *qualityPtr
+	if quality == 0 {
+		switch encoderName {
+		case "h264_videotoolbox":
+			quality = 75 // Хорошее качество для VideoToolbox
+		case "h264_nvenc":
+			quality = 28 // Эквивалент CRF для NVENC
+		default:
+			quality = 23 // Стандартный CRF для x264
+		}
+	}
+
 	cfg := &config.Config{
 		InputPath:      inputPath,
 		OutputVideo:    finalOutput,
@@ -154,6 +172,8 @@ func main() {
 		DPI:            *dpiPtr,
 		AudioPath:      audioPath,
 		Preset:         *presetPtr,
+		VideoEncoder:   encoderName,
+		Quality:        quality,
 	}
 
 	// Инициализируем зависимости
