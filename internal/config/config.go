@@ -18,6 +18,8 @@ type Config struct {
 	PageDurations  []float64
 	VideoEncoder   string
 	Quality        int
+	ShowStats      bool
+	BuildVersion   string
 }
 
 type SegmentParams struct {

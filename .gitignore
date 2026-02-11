@@ -31,3 +31,9 @@ input/images/
 
 # Project Management
 project_meta/
+benchmark.log
+
+benchmark_app
+disk_less
+generate_speed
+pipelined_app
