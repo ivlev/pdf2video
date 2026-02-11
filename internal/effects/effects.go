@@ -70,8 +70,8 @@ func (e *DefaultEffect) GenerateFilter(p config.SegmentParams) string {
 	)
 
 	zoomFilter := fmt.Sprintf(
-		"zoompan=z='%s':d=%d:s=%dx%d:x='%s':y='%s'",
-		zFormula, int(fTotal), p.Width, p.Height, zoomX, zoomY,
+		"zoompan=z='%s':d=%d:s=%dx%d:x='%s':y='%s':fps=%d",
+		zFormula, int(fTotal), p.Width, p.Height, zoomX, zoomY, p.FPS,
 	)
 
 	return fmt.Sprintf("%s,%s,scale=%d:%d", aspectFilter, zoomFilter, p.Width, p.Height)
