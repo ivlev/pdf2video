@@ -46,7 +46,6 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 		return nil
 	}
 
-	pageDuration := params.TotalDuration / float64(len(segmentPaths))
 	fadeDuration := params.FadeDuration
 
 	args := []string{"-y"}
@@ -62,15 +61,20 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 
 	filterGraph := ""
 	lastOut := "[0:v]"
-	offset := pageDuration - fadeDuration
+	currentOffset := 0.0
 
 	for i := 1; i < len(segmentPaths); i++ {
+		duration := params.TotalDuration / float64(len(segmentPaths))
+		if i-1 < len(params.PageDurations) {
+			duration = params.PageDurations[i-1]
+		}
+		currentOffset += duration - fadeDuration
+
 		nextIn := fmt.Sprintf("[%d:v]", i)
 		outName := fmt.Sprintf("[v%d]", i)
 		filterGraph += fmt.Sprintf("%s%sxfade=transition=%s:duration=%f:offset=%f%s;",
-			lastOut, nextIn, params.TransitionType, fadeDuration, offset, outName)
+			lastOut, nextIn, params.TransitionType, fadeDuration, currentOffset, outName)
 		lastOut = outName
-		offset += pageDuration - fadeDuration
 	}
 	filterGraph = strings.TrimSuffix(filterGraph, ";")
 
