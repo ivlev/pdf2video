@@ -44,7 +44,7 @@ func main() {
 	audioPtr := flag.String("audio", "", "Путь к аудио (по умолчанию: самый свежий файл в input/audio/)")
 	audioSyncPtr := flag.Bool("audio-sync", true, "Синхронизировать длительность видео с аудио")
 	presetPtr := flag.String("preset", "", "Пресет формата: 16:9, 9:16 (Shorts/TikTok), 4:5 (Instagram)")
-	qualityPtr := flag.Int("quality", 0, "Качество видео (0 - авто, иначе: x264=1-51(CRF), VideoToolbox=0-100)")
+	qualityPtr := flag.Int("quality", 0, "Качество видео (0 - авто, x264: CRF 1-51, VideoToolbox: битрейт = Q*100кбит/с)")
 
 	flag.Parse()
 

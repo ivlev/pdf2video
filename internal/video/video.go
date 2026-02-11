@@ -88,7 +88,9 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 	qualityArgs := []string{}
 	switch params.VideoEncoder {
 	case "h264_videotoolbox":
-		qualityArgs = append(qualityArgs, "-q:v", fmt.Sprintf("%d", params.Quality))
+		// VideoToolbox часто не поддерживает -q:v напрямую на всех версиях. Используем битрейт.
+		bitrate := params.Quality * 100 // кбит/с. 75 -> 7.5Мбит/с
+		qualityArgs = append(qualityArgs, "-b:v", fmt.Sprintf("%dk", bitrate))
 	case "h264_nvenc":
 		qualityArgs = append(qualityArgs, "-cq", fmt.Sprintf("%d", params.Quality))
 	default: // libx264

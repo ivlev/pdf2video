@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"bytes"
 	"fmt"
-	"image/png"
+	"image"
+	"image/draw"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -96,14 +99,9 @@ func (p *VideoProject) Run() error {
 			for i := range jobs {
 				img, err := p.Source.RenderPage(i, p.Config.DPI)
 				if err != nil {
-					log.Printf("[!] Error page %d: %v", i, err)
+					log.Printf("[!] Error rendering page %d: %v", i, err)
 					continue
 				}
-
-				imgPath := filepath.Join(p.tempDir, fmt.Sprintf("p%d.png", i))
-				imgFile, _ := os.Create(imgPath)
-				png.Encode(imgFile, img)
-				imgFile.Close()
 
 				segPath := filepath.Join(p.tempDir, fmt.Sprintf("s%d.mp4", i))
 				duration := p.Config.PageDurations[i]
@@ -121,24 +119,61 @@ func (p *VideoProject) Run() error {
 
 				filter := p.Effect.GenerateFilter(params)
 
+				inputW, inputH := img.Bounds().Dx(), img.Bounds().Dy()
 				qualityArgs := []string{}
 				switch p.Config.VideoEncoder {
 				case "h264_videotoolbox":
-					qualityArgs = append(qualityArgs, "-q:v", fmt.Sprintf("%d", p.Config.Quality))
+					// VideoToolbox часто не поддерживает -q:v напрямую на всех версиях. Используем битрейт.
+					bitrate := p.Config.Quality * 100 // кбит/с. 75 -> 7.5Мбит/с
+					qualityArgs = append(qualityArgs, "-b:v", fmt.Sprintf("%dk", bitrate))
 				case "h264_nvenc":
 					qualityArgs = append(qualityArgs, "-cq", fmt.Sprintf("%d", p.Config.Quality))
 				default: // libx264
 					qualityArgs = append(qualityArgs, "-crf", fmt.Sprintf("%d", p.Config.Quality), "-preset", "medium")
 				}
 
-				ffmpegArgs := []string{"-y", "-i", imgPath, "-vf", filter, "-t", fmt.Sprintf("%f", duration), "-r", fmt.Sprintf("%d", p.Config.FPS), "-pix_fmt", "yuv420p", "-c:v", p.Config.VideoEncoder}
+				// Используем rawvideo через stdin для исключения I/O на диск
+				ffmpegArgs := []string{
+					"-y",
+					"-f", "rawvideo",
+					"-pixel_format", "rgba",
+					"-video_size", fmt.Sprintf("%dx%d", inputW, inputH),
+					"-i", "-",
+					"-vf", filter,
+					"-t", fmt.Sprintf("%f", duration),
+					"-r", fmt.Sprintf("%d", p.Config.FPS),
+					"-pix_fmt", "yuv420p",
+					"-c:v", p.Config.VideoEncoder,
+				}
 				ffmpegArgs = append(ffmpegArgs, qualityArgs...)
 				ffmpegArgs = append(ffmpegArgs, segPath)
 
 				cmd := exec.Command("ffmpeg", ffmpegArgs...)
+				var out bytes.Buffer
+				cmd.Stdout = &out
+				cmd.Stderr = &out
 
-				if out, err := cmd.CombinedOutput(); err != nil {
-					log.Printf("[!] FFmpeg error page %d: %v\nLog: %s", i, err, string(out))
+				stdin, err := cmd.StdinPipe()
+				if err != nil {
+					log.Printf("[!] StdinPipe error page %d: %v", i, err)
+					continue
+				}
+
+				if err := cmd.Start(); err != nil {
+					log.Printf("[!] FFmpeg start error page %d: %v", i, err)
+					continue
+				}
+
+				// Передаем один кадр raw-данных. zoompan с d=N размножит его.
+				if err := p.writeRawRGBA(stdin, img); err != nil {
+					log.Printf("[!] Write raw error page %d: %v", i, err)
+					stdin.Close()
+					continue
+				}
+				stdin.Close()
+
+				if err := cmd.Wait(); err != nil {
+					log.Printf("[!] FFmpeg wait error page %d: %v\nLog: %s", i, err, out.String())
 					continue
 				}
 
@@ -205,4 +240,15 @@ func (p *VideoProject) calculateDurations(pageCount int) {
 	}
 
 	p.Config.PageDurations = durations
+}
+func (p *VideoProject) writeRawRGBA(w io.Writer, img image.Image) error {
+	bounds := img.Bounds()
+	rgba, ok := img.(*image.RGBA)
+	// Проверяем, является ли изображение уже RGBA и имеет ли стандартный шаг (stride)
+	if !ok || rgba.Stride != bounds.Dx()*4 || rgba.Rect.Min.X != 0 || rgba.Rect.Min.Y != 0 {
+		rgba = image.NewRGBA(bounds)
+		draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+	}
+	_, err := w.Write(rgba.Pix)
+	return err
 }
