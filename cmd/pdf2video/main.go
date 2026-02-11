@@ -45,8 +45,12 @@ func main() {
 	audioSyncPtr := flag.Bool("audio-sync", true, "Синхронизировать длительность видео с аудио")
 	presetPtr := flag.String("preset", "", "Пресет формата: 16:9, 9:16 (Shorts/TikTok), 4:5 (Instagram)")
 	qualityPtr := flag.Int("quality", 0, "Качество видео (0 - авто, x264: CRF 1-51, VideoToolbox: битрейт = Q*100кбит/с)")
+	statsPtr := flag.Bool("stats", false, "Вывести статистику производительности и записать в benchmark.log")
 
 	flag.Parse()
+
+	// Версия сборки (можно переопределить через -ldflags)
+	buildVersion := "dev"
 
 	width, height := *widthPtr, *heightPtr
 	switch *presetPtr {
@@ -174,6 +178,8 @@ func main() {
 		Preset:         *presetPtr,
 		VideoEncoder:   encoderName,
 		Quality:        quality,
+		ShowStats:      *statsPtr,
+		BuildVersion:   buildVersion,
 	}
 
 	// Инициализируем зависимости

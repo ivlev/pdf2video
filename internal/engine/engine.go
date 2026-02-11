@@ -38,6 +38,9 @@ func NewVideoProject(cfg *config.Config, src source.Source, ve video.VideoEncode
 }
 
 func (p *VideoProject) Run() error {
+	startTime := time.Now()
+	var renderStart, renderEnd, encodeStart, encodeEnd, concatStart time.Time
+
 	var err error
 	p.tempDir, err = os.MkdirTemp("", "pdf2video_")
 	if err != nil {
@@ -83,25 +86,53 @@ func (p *VideoProject) Run() error {
 	fmt.Printf("[*] Разрешение: %dx%d @ %d FPS | DPI: %d\n", p.Config.Width, p.Config.Height, p.Config.FPS, p.Config.DPI)
 	fmt.Println("-----------------------------")
 
+	// Каналы для пайплайна
+	// jobs -> renderPool -> renderResults -> encodePool -> results
 	jobs := make(chan int, pageCount)
+	renderResults := make(chan *RenderResult, pageCount)
 	results := make([]string, pageCount)
-	var wg sync.WaitGroup
 
-	numWorkers := p.Config.Workers
-	if numWorkers > pageCount {
-		numWorkers = pageCount
+	var wgRender sync.WaitGroup
+	var wgEncode sync.WaitGroup
+
+	// 1. Render Pool (CPU bound)
+	// Используем все доступные ядра для рендеринга PDF
+	numRenderWorkers := p.Config.Workers
+	if numRenderWorkers > pageCount {
+		numRenderWorkers = pageCount
 	}
 
-	for w := 0; w < numWorkers; w++ {
-		wg.Add(1)
+	for w := 0; w < numRenderWorkers; w++ {
+		wgRender.Add(1)
 		go func() {
-			defer wg.Done()
+			defer wgRender.Done()
 			for i := range jobs {
 				img, err := p.Source.RenderPage(i, p.Config.DPI)
 				if err != nil {
 					log.Printf("[!] Error rendering page %d: %v", i, err)
 					continue
 				}
+				// Отправляем результат рендеринга в канал кодирования
+				renderResults <- &RenderResult{Index: i, Image: img}
+			}
+		}()
+	}
+
+	// 2. Encode Pool (GPU/Encoder bound)
+	// Ограничиваем количество параллельных энкодеров, чтобы не перегрузить GPU/VRAM
+	// 4 - разумный компромисс для большинства GPU (NVENC/VideoToolbox)
+	numEncodeWorkers := 4
+	if numEncodeWorkers > pageCount {
+		numEncodeWorkers = pageCount
+	}
+
+	for w := 0; w < numEncodeWorkers; w++ {
+		wgEncode.Add(1)
+		go func() {
+			defer wgEncode.Done()
+			for res := range renderResults {
+				i := res.Index
+				img := res.Image
 
 				segPath := filepath.Join(p.tempDir, fmt.Sprintf("s%d.mp4", i))
 				duration := p.Config.PageDurations[i]
@@ -183,14 +214,77 @@ func (p *VideoProject) Run() error {
 		}()
 	}
 
+	// Запускаем задачи рендеринга
+	renderStart = time.Now()
 	for i := 0; i < pageCount; i++ {
 		jobs <- i
 	}
 	close(jobs)
-	wg.Wait()
+
+	// Ждем завершения рендеринга
+	wgRender.Wait()
+	renderEnd = time.Now()
+	close(renderResults)
+
+	// Ждем завершения кодирования
+	encodeStart = renderStart // Encode по факту стартует почти сразу с Render
+	wgEncode.Wait()
+	encodeEnd = time.Now()
 
 	fmt.Println("[*] Сборка финального видео (с эффектами переходов)...")
-	return p.Encoder.Concatenate(results, p.Config.OutputVideo, p.tempDir, *p.Config)
+	concatStart = time.Now()
+	err = p.Encoder.Concatenate(results, p.Config.OutputVideo, p.tempDir, *p.Config)
+	if err != nil {
+		return err
+	}
+
+	totalTime := time.Since(startTime)
+	renderTime := renderEnd.Sub(renderStart)
+	encodeTime := encodeEnd.Sub(encodeStart)
+	concatTime := time.Since(concatStart)
+	fps := float64(pageCount) / totalTime.Seconds()
+
+	if p.Config.ShowStats {
+		report := fmt.Sprintf(
+			"--- [PERFORMANCE REPORT] ---\n"+
+				"Build: %s\n"+
+				"Total Time: %.2fs\n"+
+				"Rendering (CPU): %.2fs\n"+
+				"Encoding (GPU/CPU): %.2fs\n"+
+				"Concatenation: %.2fs\n"+
+				"Effective FPS: %.2f\n"+
+				"----------------------------\n",
+			p.Config.BuildVersion, totalTime.Seconds(), renderTime.Seconds(), encodeTime.Seconds(), concatTime.Seconds(), fps,
+		)
+		fmt.Print(report)
+
+		// Логирование в файл
+		logEntry := fmt.Sprintf("[%s] Build: %s | Input: %s | Pages: %d | Total: %.2fs | Render: %.2fs | Encode: %.2fs | FPS: %.2f\n",
+			time.Now().Format("2006-01-02 15:04:05"),
+			p.Config.BuildVersion,
+			filepath.Base(p.Config.InputPath),
+			pageCount,
+			totalTime.Seconds(),
+			renderTime.Seconds(),
+			encodeTime.Seconds(),
+			fps,
+		)
+
+		f, err := os.OpenFile("benchmark.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			f.WriteString(logEntry)
+			f.Close()
+		} else {
+			fmt.Printf("[!] Не удалось записать benchmark.log: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+type RenderResult struct {
+	Index int
+	Image image.Image
 }
 
 func (p *VideoProject) calculateDurations(pageCount int) {
