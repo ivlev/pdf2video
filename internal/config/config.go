@@ -15,6 +15,7 @@ type Config struct {
 	DPI            int
 	AudioPath      string
 	Preset         string
+	PageDurations  []float64
 }
 
 type SegmentParams struct {
