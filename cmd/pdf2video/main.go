@@ -46,6 +46,12 @@ func main() {
 	presetPtr := flag.String("preset", "", "Пресет формата: 16:9, 9:16 (Shorts/TikTok), 4:5 (Instagram)")
 	qualityPtr := flag.Int("quality", 0, "Качество видео (0 - авто, x264: CRF 1-51, VideoToolbox: битрейт = Q*100кбит/с)")
 	statsPtr := flag.Bool("stats", false, "Вывести статистику производительности и записать в benchmark.log")
+	analyzeModePtr := flag.String("analyze-mode", "", "Режим анализа: contrast (по умолчанию), ocr, ai")
+	minBlockAreaPtr := flag.Int("min-block-area", 500, "Минимальная площадь блока (пиксели²)")
+	edgeThresholdPtr := flag.Float64("edge-threshold", 30.0, "Порог чувствительности границ")
+	generateScenarioPtr := flag.Bool("generate-scenario", false, "Генерировать YAML сценарий без рендеринга")
+	scenarioOutputPtr := flag.String("scenario-output", "", "Путь для сохранения сценария (по умолчанию: internal/scenarios/scenario_YYYY-MM-DD_HH-MM-SS.yaml)")
+	scenarioInputPtr := flag.String("scenario", "", "Путь к сценарию для рендеринга (по умолчанию: самый свежий из internal/scenarios/)")
 
 	flag.Parse()
 
@@ -162,24 +168,30 @@ func main() {
 	}
 
 	cfg := &config.Config{
-		InputPath:      inputPath,
-		OutputVideo:    finalOutput,
-		TotalDuration:  totalDuration,
-		Width:          width,
-		Height:         height,
-		FPS:            *fpsPtr,
-		Workers:        *workersPtr,
-		FadeDuration:   *fadePtr,
-		TransitionType: *transitionPtr,
-		ZoomMode:       *zoomPtr,
-		ZoomSpeed:      *zoomSpeedPtr,
-		DPI:            *dpiPtr,
-		AudioPath:      audioPath,
-		Preset:         *presetPtr,
-		VideoEncoder:   encoderName,
-		Quality:        quality,
-		ShowStats:      *statsPtr,
-		BuildVersion:   buildVersion,
+		InputPath:        inputPath,
+		OutputVideo:      finalOutput,
+		TotalDuration:    totalDuration,
+		Width:            width,
+		Height:           height,
+		FPS:              *fpsPtr,
+		Workers:          *workersPtr,
+		FadeDuration:     *fadePtr,
+		TransitionType:   *transitionPtr,
+		ZoomMode:         *zoomPtr,
+		ZoomSpeed:        *zoomSpeedPtr,
+		DPI:              *dpiPtr,
+		AudioPath:        audioPath,
+		Preset:           *presetPtr,
+		VideoEncoder:     encoderName,
+		Quality:          quality,
+		ShowStats:        *statsPtr,
+		BuildVersion:     buildVersion,
+		AnalyzeMode:      *analyzeModePtr,
+		MinBlockArea:     *minBlockAreaPtr,
+		EdgeThreshold:    *edgeThresholdPtr,
+		GenerateScenario: *generateScenarioPtr,
+		ScenarioOutput:   *scenarioOutputPtr,
+		ScenarioInput:    *scenarioInputPtr,
 	}
 
 	// Инициализируем зависимости

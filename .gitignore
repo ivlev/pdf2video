@@ -33,7 +33,12 @@ input/images/
 project_meta/
 benchmark.log
 
+# Generated Scenarios
+internal/scenarios/*.yaml
+
 benchmark_app
 disk_less
 generate_speed
 pipelined_app
+pdf2video_mod
+pdf2video_test

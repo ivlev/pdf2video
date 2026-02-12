@@ -1,7 +1,7 @@
 # pdf2video Functional Specification
 
-**Version:** 0.5 (Pipelined)
-**Date:** 2026-02-11
+**Version:** 0.6 (Smart Zoom)
+**Date:** 2026-02-13
 
 ## 1. Product Overview
 `pdf2video` is a high-performance CLI utility for automatically creating dynamic video presentations from static PDF files or image sets. The program transforms static slides into cinematic video sequences with effects overlay ("Zoom Drift", transitions), audio synchronization, and hardware acceleration.
@@ -40,6 +40,12 @@ Data is transferred via buffered channels, ensuring 100% resource utilization wi
 ### 3.3. Memory Pipes (Zero-Disk I/O)
 Images are transferred from Render Pool to FFmpeg directly through RAM (stdin pipe) in `rawvideo` format. Intermediate PNG files are not created, significantly reducing SSD wear and speeding up operation.
 
+### 3.4. Smart Zoom (Intelligent Camera)
+Automatic image analysis and camera path scenario generation:
+- **Analyze:** Detection of regions of interest (headers, text, objects) via Sobel algorithm + morphology.
+- **Plan:** YAML scenario generation with keyframes, zoom levels, and timing.
+- **Render:** Scenario-based dynamic video creation (in development).
+
 ## 4. Configuration Reference (Flags)
 
 ### Basics
@@ -75,6 +81,16 @@ Images are transferred from Render Pool to FFmpeg directly through RAM (stdin pi
 | `-stats` | Output performance metrics | `false` |
 | `-workers` | Number of render threads | All CPU cores |
 
+### Smart Zoom (Analysis & Scenarios)
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-analyze-mode` | Analysis mode (`contrast`, `ocr`, `ai`) | `contrast` |
+| `-min-block-area` | Minimum block area (pixels²) | 500 |
+| `-edge-threshold` | Edge detection sensitivity threshold | 30.0 |
+| `-generate-scenario` | Generate YAML scenario | `false` |
+| `-scenario-output` | Path to save scenario | `internal/scenarios/scenario_YYYY-MM-DD_HH-MM-SS.yaml` |
+| `-scenario` | Path to scenario for rendering | Latest from `internal/scenarios/` |
+
 ## 5. Usage Scenarios
 
 ### Quick Test
@@ -94,3 +110,9 @@ Creates a vertical video exactly 60 seconds long with random camera movements.
 ./pdf2video -input high_res.pdf -width 3840 -height 2160 -quality 90 -dpi 600
 ```
 Uses high bitrate and DPI for crystal clear image.
+
+### Smart Zoom Scenario Generation
+```bash
+./pdf2video -input presentation.pdf -generate-scenario
+```
+Analyzes slides, detects key blocks, and creates a YAML scenario in `internal/scenarios/scenario_2026-02-13_01-42-26.yaml`.
