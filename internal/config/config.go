@@ -1,25 +1,31 @@
 package config
 
 type Config struct {
-	InputPath      string
-	OutputVideo    string
-	TotalDuration  float64
-	Width          int
-	Height         int
-	FPS            int
-	Workers        int
-	FadeDuration   float64
-	TransitionType string
-	ZoomMode       string
-	ZoomSpeed      float64
-	DPI            int
-	AudioPath      string
-	Preset         string
-	PageDurations  []float64
-	VideoEncoder   string
-	Quality        int
-	ShowStats      bool
-	BuildVersion   string
+	InputPath        string
+	OutputVideo      string
+	TotalDuration    float64
+	Width            int
+	Height           int
+	FPS              int
+	Workers          int
+	FadeDuration     float64
+	TransitionType   string
+	ZoomMode         string
+	ZoomSpeed        float64
+	DPI              int
+	AudioPath        string
+	Preset           string
+	PageDurations    []float64
+	VideoEncoder     string
+	Quality          int
+	ShowStats        bool
+	BuildVersion     string
+	AnalyzeMode      string
+	MinBlockArea     int
+	EdgeThreshold    float64
+	GenerateScenario bool
+	ScenarioOutput   string
+	ScenarioInput    string
 }
 
 type SegmentParams struct {

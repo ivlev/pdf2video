@@ -31,9 +31,23 @@ input/images/
 
 # Project Management
 project_meta/
-benchmark.log
+*.log
 
+# Generated Scenarios
+internal/scenarios/*.yaml
+
+# Binaries and Tests
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
 benchmark_app
 disk_less
 generate_speed
 pipelined_app
+pdf2video_mod
+pdf2video_test
