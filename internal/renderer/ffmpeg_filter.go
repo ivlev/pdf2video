@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ivlev/pdf2video/internal/director"
 )
@@ -12,92 +13,84 @@ func GenerateZoomPanFilter(keyframes []director.Keyframe, duration float64, fps 
 		return ""
 	}
 
+	totalFrames := int(duration * float64(fps))
+	if totalFrames <= 0 {
+		totalFrames = 1
+	}
+
 	// Build zoompan filter with piecewise expressions
 	zoomExpr := buildZoomExpression(keyframes, fps)
 	xExpr := buildPanExpression(keyframes, fps, width, true)
 	yExpr := buildPanExpression(keyframes, fps, height, false)
 
-	return fmt.Sprintf("zoompan=z='%s':x='%s':y='%s':d=1:s=%dx%d:fps=%d",
-		zoomExpr, xExpr, yExpr, width, height, fps)
+	return fmt.Sprintf("zoompan=z='%s':x='%s':y='%s':d=%d:s=%dx%d:fps=%d",
+		zoomExpr, xExpr, yExpr, totalFrames, width, height, fps)
 }
 
 // buildZoomExpression creates piecewise zoom expression for FFmpeg
 func buildZoomExpression(keyframes []director.Keyframe, fps int) string {
+	if len(keyframes) == 0 {
+		return "1"
+	}
 	if len(keyframes) == 1 {
 		return fmt.Sprintf("%.6f", keyframes[0].Zoom)
 	}
 
-	expr := ""
+	exprParts := []string{}
 	for i := 0; i < len(keyframes)-1; i++ {
 		startFrame := int(keyframes[i].Time * float64(fps))
 		endFrame := int(keyframes[i+1].Time * float64(fps))
 		startZoom := keyframes[i].Zoom
 		endZoom := keyframes[i+1].Zoom
 
-		if i > 0 {
-			expr += ","
-		}
-
-		// Linear interpolation between keyframes
-		// if(lte(on,endFrame),startZoom+(on-startFrame)/(endFrame-startFrame)*(endZoom-startZoom),...)
 		if endFrame > startFrame {
-			expr += fmt.Sprintf("if(lte(on,%d),%.6f+(on-%d)/(%d-%.6f)*(%.6f-%.6f)",
-				endFrame, startZoom, startFrame, endFrame-startFrame, startZoom, endZoom, startZoom)
-		} else {
-			expr += fmt.Sprintf("%.6f", startZoom)
+			// val = startZoom + (on - startFrame) * (endZoom - startZoom) / (endFrame - startFrame)
+			part := fmt.Sprintf("between(on,%d,%d)*(%.6f+(on-%d)*(%.6f-%.6f)/(%d))",
+				startFrame, endFrame-1, startZoom, startFrame, endZoom, startZoom, endFrame-startFrame)
+			exprParts = append(exprParts, part)
 		}
 	}
 
-	// Close all if statements and add final zoom
-	for i := 0; i < len(keyframes)-2; i++ {
-		expr += ")"
-	}
-	expr += fmt.Sprintf(",%.6f)", keyframes[len(keyframes)-1].Zoom)
+	// Add final value for frame >= last keyframe
+	lastFrame := int(keyframes[len(keyframes)-1].Time * float64(fps))
+	lastZoom := keyframes[len(keyframes)-1].Zoom
+	exprParts = append(exprParts, fmt.Sprintf("gte(on,%d)*%.6f", lastFrame, lastZoom))
 
-	return expr
+	return strings.Join(exprParts, "+")
 }
 
 // buildPanExpression creates piecewise pan expression for X or Y axis
 func buildPanExpression(keyframes []director.Keyframe, fps int, dimension int, isX bool) string {
+	if len(keyframes) == 0 {
+		return "0"
+	}
 	if len(keyframes) == 1 {
 		center := getCenter(keyframes[0], isX)
-		return fmt.Sprintf("%.6f", float64(dimension)/2.0-center)
+		// x = center - (dim/zoom)/2
+		return fmt.Sprintf("%.6f-(%d/zoom)/2", center, dimension)
 	}
 
-	expr := ""
+	exprParts := []string{}
 	for i := 0; i < len(keyframes)-1; i++ {
 		startFrame := int(keyframes[i].Time * float64(fps))
 		endFrame := int(keyframes[i+1].Time * float64(fps))
 		startCenter := getCenter(keyframes[i], isX)
 		endCenter := getCenter(keyframes[i+1], isX)
 
-		if i > 0 {
-			expr += ","
-		}
-
-		// Pan to keep region centered
-		// x = viewport_width/2 - region_center_x
 		if endFrame > startFrame {
-			expr += fmt.Sprintf("if(lte(on,%d),%.6f+(on-%d)/(%d)*(%.6f-%.6f)",
-				endFrame,
-				float64(dimension)/2.0-startCenter,
-				startFrame,
-				endFrame-startFrame,
-				float64(dimension)/2.0-endCenter,
-				float64(dimension)/2.0-startCenter)
-		} else {
-			expr += fmt.Sprintf("%.6f", float64(dimension)/2.0-startCenter)
+			// center = startCenter + (on - startFrame) * (endCenter - startCenter) / (endFrame - startFrame)
+			part := fmt.Sprintf("between(on,%d,%d)*(%.6f+(on-%d)*(%.6f-%.6f)/(%d)-(%d/zoom)/2)",
+				startFrame, endFrame-1, startCenter, startFrame, endCenter, startCenter, endFrame-startFrame, dimension)
+			exprParts = append(exprParts, part)
 		}
 	}
 
-	// Close all if statements and add final position
-	for i := 0; i < len(keyframes)-2; i++ {
-		expr += ")"
-	}
-	finalCenter := getCenter(keyframes[len(keyframes)-1], isX)
-	expr += fmt.Sprintf(",%.6f)", float64(dimension)/2.0-finalCenter)
+	// Add final value for frame >= last keyframe
+	lastFrame := int(keyframes[len(keyframes)-1].Time * float64(fps))
+	lastCenter := getCenter(keyframes[len(keyframes)-1], isX)
+	exprParts = append(exprParts, fmt.Sprintf("gte(on,%d)*(%.6f-(%d/zoom)/2)", lastFrame, lastCenter, dimension))
 
-	return expr
+	return strings.Join(exprParts, "+")
 }
 
 // getCenter extracts center coordinate from keyframe rectangle

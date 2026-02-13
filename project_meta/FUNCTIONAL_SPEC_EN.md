@@ -1,10 +1,10 @@
 # pdf2video Functional Specification
 
-**Version:** 0.6 (Smart Zoom)
-**Date:** 2026-02-13
+**Version:** 0.7 (Scenario Rendering)
+**Date:** 2026-02-14
 
 ## 1. Product Overview
-`pdf2video` is a high-performance CLI utility for automatically creating dynamic video presentations from static PDF files or image sets. The program transforms static slides into cinematic video sequences with effects overlay ("Zoom Drift", transitions), audio synchronization, and hardware acceleration.
+`pdf2video` is a high-performance CLI utility for automatically creating dynamic video presentations from static PDF files or image sets. The program transforms static slides into cinematic video sequences with precise camera control via YAML scenarios, audio synchronization, and hardware acceleration.
 
 ## 2. Key Features
 
@@ -12,39 +12,34 @@
 - **PDF Documents:** High-resolution page rendering (configurable DPI).
 - **Images:** Folders containing `.jpg`, `.jpeg`, `.png` files. Sorting and filtering supported.
 - **Audio:** Automatic soundtrack selection from `input/audio` folder or specific file path.
+- **Scenarios (YAML):** Keyframe descriptions for precise zoom and pan control.
 
 ### 2.2. Video Generation
-- **Presets:** Ready-made formats for social media:
-    - `16:9` (YouTube)
-    - `9:16` (TikTok, Reels, Shorts)
-    - `4:5` (Instagram Feed)
-- **Zoom Drift:** Intelligent camera "breathing" effect (smooth zoom in and return).
-- **Transitions:** Support for `xfade` (fade, wipe, slide, pixelize, etc.).
-- **Synchronization:** Video duration automatically adjusts to audio track length (if enabled).
-- **Randomization:** Slide duration varies by ±15% from average to create a lively rhythm.
+- **Presets:** YouTube (16:9), TikTok/Shorts (9:16), Instagram (4:5).
+- **Scenario Rendering:** High-precision camera movement based on provided coordinates and timing.
+- **Smart Zoom (Auto-Plan):** Automatic scenario generation based on slide content analysis.
+- **Transitions:** Support for all `xfade` effects (fade, wipe, slide, pixelize, etc.).
+- **Synchronization:** Video length perfectly matches the audio track duration.
+- **Frame-Boundary Alignment:** All timing calculations are aligned to exact frame boundaries (FPS) to eliminate jitter and concatenation artifacts.
 
 ## 3. Architecture & Optimizations
 
 ### 3.1. Hardware Acceleration
 The application automatically selects the best available encoder:
-- **macOS:** `h264_videotoolbox` (Apple Silicon / Intel). Uses bitrate control (`-b:v`).
-- **NVIDIA:** `h264_nvenc` (NVENC).
+- **macOS:** `h264_videotoolbox` (Apple Silicon / Intel).
+- **NVIDIA:** `h264_nvenc`.
 - **CPU:** `libx264` (Fallback).
 
-### 3.2. Pipelining (Stream Processing)
-Architecture is split into two independent worker pools:
-1.  **Render Pool (CPU):** Renders PDF pages to images. Scales across all cores.
-2.  **Encode Pool (GPU):** Encodes video segments. Limited to 4 threads to protect GPU memory.
-Data is transferred via buffered channels, ensuring 100% resource utilization without idle time.
+### 3.2. Pipelining & Memory Pipes
+- **Render Pool (CPU):** Renders PDF pages to images in parallel.
+- **Encode Pool (GPU):** Encodes video segments using hardware acceleration.
+- **Zero-Disk I/O:** Images are transferred directly to FFmpeg via `stdin pipe` in `rawvideo` format.
 
-### 3.3. Memory Pipes (Zero-Disk I/O)
-Images are transferred from Render Pool to FFmpeg directly through RAM (stdin pipe) in `rawvideo` format. Intermediate PNG files are not created, significantly reducing SSD wear and speeding up operation.
-
-### 3.4. Smart Zoom (Intelligent Camera)
-Automatic image analysis and camera path scenario generation:
-- **Analyze:** Detection of regions of interest (headers, text, objects) via Sobel algorithm + morphology.
-- **Plan:** YAML scenario generation with keyframes, zoom levels, and timing.
-- **Render:** Scenario-based dynamic video creation (in development).
+### 3.3. Smart Zoom & Scenario Rendering
+- **Analyze:** ROI detection (headers, text) via `ContrastDetector`.
+- **Plan:** Automatic YAML scenario generation.
+- **Scale:** Scenario timings are automatically scaled to match the total audio duration.
+- **Render:** `ScenarioEffect` transforms YAML keyframes into complex piecewise `zoompan` expressions.
 
 ## 4. Configuration Reference (Flags)
 
