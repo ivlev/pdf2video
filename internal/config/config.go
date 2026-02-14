@@ -26,6 +26,7 @@ type Config struct {
 	GenerateScenario bool
 	ScenarioOutput   string
 	ScenarioInput    string
+	OutroDuration    float64
 }
 
 type SegmentParams struct {
@@ -35,5 +36,6 @@ type SegmentParams struct {
 	ZoomMode      string
 	ZoomSpeed     float64
 	FadeDuration  float64
+	OutroDuration float64
 	PageIndex     int
 }

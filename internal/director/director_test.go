@@ -24,7 +24,7 @@ func TestDirector(t *testing.T) {
 		},
 	}
 
-	scenario, err := director.GenerateScenario(blocks, "test.png", 10.0)
+	scenario, err := director.GenerateScenario(blocks, "test.png", 10.0, 0.5, 1.0)
 	if err != nil {
 		t.Fatalf("GenerateScenario failed: %v", err)
 	}

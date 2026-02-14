@@ -28,7 +28,7 @@ func NewDirector(viewportWidth, viewportHeight int) *Director {
 }
 
 // GenerateScenario creates a scenario from detected blocks
-func (d *Director) GenerateScenario(blocks []analyzer.Block, input string, totalDuration float64) (*Scenario, error) {
+func (d *Director) GenerateScenario(blocks []analyzer.Block, input string, totalDuration, fadeDuration, outroDuration float64) (*Scenario, error) {
 	if len(blocks) == 0 {
 		return nil, fmt.Errorf("no blocks detected")
 	}
@@ -37,10 +37,10 @@ func (d *Director) GenerateScenario(blocks []analyzer.Block, input string, total
 	sortedBlocks := d.sortBlocks(blocks)
 
 	// Calculate duration per block
-	dwellTime := d.calculateDwellTime(totalDuration, len(sortedBlocks))
+	dwellTime := d.calculateDwellTime(totalDuration, fadeDuration, outroDuration, len(sortedBlocks))
 
 	// Generate keyframes
-	keyframes := d.generateKeyframes(sortedBlocks, dwellTime)
+	keyframes := d.generateKeyframes(sortedBlocks, dwellTime, totalDuration, fadeDuration, outroDuration)
 
 	slide := Slide{
 		ID:        1,
@@ -79,10 +79,12 @@ func (d *Director) sortBlocks(blocks []analyzer.Block) []analyzer.Block {
 }
 
 // calculateDwellTime determines how long to show each block
-func (d *Director) calculateDwellTime(totalDuration float64, blockCount int) float64 {
-	// Reserve time for intro/outro (full view)
-	introOutroDuration := 2.0 // 1s intro + 1s outro
-	availableDuration := totalDuration - introOutroDuration
+func (d *Director) calculateDwellTime(totalDuration, fadeDuration, outroDuration float64, blockCount int) float64 {
+	// Reserve time for intro (1s) and outro zoom-out (outroDuration)
+	// Outro zoom-out must finish before the fade starts
+	introDuration := 1.0
+	reservedDuration := introDuration + outroDuration + fadeDuration
+	availableDuration := totalDuration - reservedDuration
 
 	if availableDuration <= 0 {
 		availableDuration = totalDuration
@@ -102,7 +104,7 @@ func (d *Director) calculateDwellTime(totalDuration float64, blockCount int) flo
 }
 
 // generateKeyframes creates keyframes for camera movement
-func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime float64) []Keyframe {
+func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDuration, fadeDuration, outroDuration float64) []Keyframe {
 	keyframes := []Keyframe{}
 
 	// Start with full view
@@ -139,9 +141,45 @@ func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime float64)
 		currentTime += dwellTime
 	}
 
-	// End with full view
+	// End of blocks, finish exactly outroDuration before the fade starts
+	// Unless we are already past that time (dwellTime too short)
+	outroZoomOutStartTime := totalDuration - fadeDuration - outroDuration
+	if outroZoomOutStartTime < currentTime {
+		outroZoomOutStartTime = currentTime
+	}
+
+	// Fix the current state before zoom-out starts to ensure exact duration
+	if len(blocks) > 0 {
+		lastBlock := blocks[len(blocks)-1]
+		keyframes = append(keyframes, Keyframe{
+			Time:  outroZoomOutStartTime,
+			Focus: "outro_stable",
+			Rect: Rectangle{
+				X: lastBlock.Rect.Min.X,
+				Y: lastBlock.Rect.Min.Y,
+				W: lastBlock.Rect.Dx(),
+				H: lastBlock.Rect.Dy(),
+			},
+			Zoom: d.calculateZoom(lastBlock.Rect),
+		})
+	}
+
+	// End with full view exactly when the transition starts
 	keyframes = append(keyframes, Keyframe{
-		Time:  currentTime,
+		Time:  totalDuration - fadeDuration,
+		Focus: "full_view",
+		Rect: Rectangle{
+			X: 0,
+			Y: 0,
+			W: d.ViewportWidth,
+			H: d.ViewportHeight,
+		},
+		Zoom: 1.0,
+	})
+
+	// Maintain full view during the crossfade
+	keyframes = append(keyframes, Keyframe{
+		Time:  totalDuration,
 		Focus: "full_view",
 		Rect: Rectangle{
 			X: 0,
