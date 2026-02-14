@@ -1,4 +1,4 @@
-# 🎥 PDF2Video: Cinematic Video Generator (v0.8) 🎥📄
+# PDF2Video: Cinematic Video Generator (v0.8)
 
 Превратите статические PDF и изображения в динамичный видеоряд.
 
