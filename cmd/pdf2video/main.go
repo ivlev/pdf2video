@@ -196,6 +196,11 @@ func main() {
 		OutroDuration:    *outroDurationPtr,
 	}
 
+	// Валидация конфигурации перед началом работы
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("[-] Ошибка конфигурации: %v", err)
+	}
+
 	// Инициализируем зависимости
 	ve := &video.FFmpegEncoder{}
 	eff := &effects.DefaultEffect{}
