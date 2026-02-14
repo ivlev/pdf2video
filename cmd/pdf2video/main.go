@@ -52,6 +52,7 @@ func main() {
 	generateScenarioPtr := flag.Bool("generate-scenario", false, "Анализировать PDF и сгенерировать YAML-сценарий вместо видео")
 	scenarioOutputPtr := flag.String("scenario-output", "", "Путь для сохранения сгенерированного сценария")
 	scenarioInputPtr := flag.String("scenario", "", "Путь к YAML-сценарию для рендеринга видео с точным управлением камерой")
+	outroDurationPtr := flag.Float64("outro-duration", 1.0, "Длительность возврата камеры к зуму 1:1 перед переходом (сек)")
 
 	flag.Parse()
 
@@ -192,6 +193,7 @@ func main() {
 		GenerateScenario: *generateScenarioPtr,
 		ScenarioOutput:   *scenarioOutputPtr,
 		ScenarioInput:    *scenarioInputPtr,
+		OutroDuration:    *outroDurationPtr,
 	}
 
 	// Инициализируем зависимости

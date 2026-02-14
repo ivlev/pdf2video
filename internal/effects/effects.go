@@ -50,9 +50,10 @@ func (e *DefaultEffect) GenerateFilter(p config.SegmentParams) string {
 		zSpeed = 0.001
 	}
 
+	// Peak calculation based on speed and available active time
 	onPeak := 0.5 / zSpeed
-	if onPeak > fActive/2 {
-		onPeak = fActive / 2
+	if onPeak > (fActive-p.OutroDuration*fFPS)/2 && (fActive-p.OutroDuration*fFPS) > 0 {
+		onPeak = (fActive - p.OutroDuration*fFPS) / 2
 	}
 
 	actualPeak := 1.0 + (zSpeed * onPeak)
@@ -61,8 +62,14 @@ func (e *DefaultEffect) GenerateFilter(p config.SegmentParams) string {
 		onPeak = 0.5 / zSpeed
 	}
 
-	zFormula := fmt.Sprintf("if(lte(on,%f), 1.0+(%f*on), if(lte(on,%f), %f-(%f-1.0)*(on-%f)/(%f-%f), 1.0))",
-		onPeak, zSpeed, fActive, actualPeak, actualPeak, onPeak, fActive, onPeak)
+	// outroStart - moment when we start zooming back to 1:1
+	outroStart := fActive - p.OutroDuration*fFPS
+	if outroStart < onPeak {
+		outroStart = onPeak
+	}
+
+	zFormula := fmt.Sprintf("if(lte(on,%f), 1.0+(%f*on), if(lte(on,%f), %f, if(lte(on,%f), %f-(%f-1.0)*(on-%f)/(%f-%f), 1.0)))",
+		onPeak, zSpeed, outroStart, actualPeak, fActive, actualPeak, actualPeak, outroStart, fActive, outroStart)
 
 	aspectFilter := fmt.Sprintf(
 		"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2",

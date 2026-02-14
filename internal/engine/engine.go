@@ -206,14 +206,15 @@ func (p *VideoProject) Run() error {
 				duration := p.Config.PageDurations[i]
 
 				params := config.SegmentParams{
-					Width:        p.Config.Width,
-					Height:       p.Config.Height,
-					FPS:          p.Config.FPS,
-					Duration:     duration,
-					ZoomMode:     p.Config.ZoomMode,
-					ZoomSpeed:    p.Config.ZoomSpeed,
-					FadeDuration: p.Config.FadeDuration,
-					PageIndex:    i,
+					Width:         p.Config.Width,
+					Height:        p.Config.Height,
+					FPS:           p.Config.FPS,
+					Duration:      duration,
+					ZoomMode:      p.Config.ZoomMode,
+					ZoomSpeed:     p.Config.ZoomSpeed,
+					FadeDuration:  p.Config.FadeDuration,
+					OutroDuration: p.Config.OutroDuration,
+					PageIndex:     i,
 				}
 
 				filter := p.Effect.GenerateFilter(params)
@@ -449,7 +450,7 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 			slideDuration = p.Config.PageDurations[i]
 		}
 
-		slideScenario, err := dir.GenerateScenario(blocks, fmt.Sprintf("slide_%d.png", i+1), slideDuration)
+		slideScenario, err := dir.GenerateScenario(blocks, fmt.Sprintf("slide_%d.png", i+1), slideDuration, p.Config.FadeDuration, p.Config.OutroDuration)
 		if err != nil || len(slideScenario.Slides) == 0 {
 			// Если анализ не удался, создаем пустой слайд
 			slides = append(slides, director.Slide{

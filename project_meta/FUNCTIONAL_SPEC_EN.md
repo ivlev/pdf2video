@@ -1,6 +1,6 @@
 # pdf2video Functional Specification
 
-**Version:** 0.7 (Scenario Rendering)
+**Version:** 0.8 (Outro Duration Control)
 **Date:** 2026-02-14
 
 ## 1. Product Overview
@@ -20,6 +20,7 @@
 - **Smart Zoom (Auto-Plan):** Automatic scenario generation based on slide content analysis.
 - **Transitions:** Support for all `xfade` effects (fade, wipe, slide, pixelize, etc.).
 - **Synchronization:** Video length perfectly matches the audio track duration.
+- **Outro Zoom-out:** Guaranteed camera return to 1:1 scale before each clip transition.
 - **Frame-Boundary Alignment:** All timing calculations are aligned to exact frame boundaries (FPS) to eliminate jitter and concatenation artifacts.
 
 ## 3. Architecture & Optimizations
@@ -67,6 +68,7 @@ The application automatically selects the best available encoder:
 | `-zoom-speed` | Zoom speed | `0.001` |
 | `-transition` | Transition type (`fade`, `wipeleft`...) | `fade` |
 | `-fade` | Transition duration (sec) | `0.5` |
+| `-outro-duration` | Time to return to 1:1 before transition | `1.0` |
 
 ### Quality & Performance
 | Flag | Description | Default |

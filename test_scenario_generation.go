@@ -56,7 +56,7 @@ func main() {
 	// Step 3: Generate scenario
 	fmt.Println("[3/3] Generating YAML scenario...")
 	d := director.NewDirector(img.Bounds().Dx(), img.Bounds().Dy())
-	scenario, err := d.GenerateScenario(blocks, "test_slide.png", 15.0)
+	scenario, err := d.GenerateScenario(blocks, "test_slide.png", 15.0, 0.5, 1.0)
 	if err != nil {
 		log.Fatalf("Failed to generate scenario: %v", err)
 	}
