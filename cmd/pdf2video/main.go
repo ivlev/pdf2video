@@ -23,7 +23,7 @@ func main() {
 	system.InitResourceLimits()
 
 	// Создаем нужные директории, если их нет
-	dirs := []string{"input/audio", "input/pdf", "output"}
+	dirs := []string{"input/audio", "input/pdf", "input/background", "output"}
 	for _, d := range dirs {
 		os.MkdirAll(d, 0755)
 	}
@@ -53,6 +53,8 @@ func main() {
 	scenarioOutputPtr := flag.String("scenario-output", "", "Путь для сохранения сгенерированного сценария")
 	scenarioInputPtr := flag.String("scenario", "", "Путь к YAML-сценарию для рендеринга видео с точным управлением камерой")
 	outroDurationPtr := flag.Float64("outro-duration", 1.0, "Длительность возврата камеры к зуму 1:1 перед переходом (сек)")
+	bgAudioPtr := flag.String("bg-audio", "", "Путь к фоновому аудио (по умолчанию: самый свежий файл в input/background/)")
+	bgVolumePtr := flag.Float64("bg-volume", 0.3, "Громкость фонового аудио (0.0 - 1.0, по умолчанию 0.3)")
 
 	flag.Parse()
 
@@ -117,6 +119,16 @@ func main() {
 			fmt.Printf("[*] Длительность видео установлена по аудио: %.2fs\n", totalDuration)
 		} else {
 			log.Printf("[!] Не удалось получить длительность аудио: %v", err)
+		}
+	}
+
+	// Обработка фонового аудио
+	bgAudioPath := *bgAudioPtr
+	if bgAudioPath == "" {
+		latest, err := system.FindLatestAudio("input/background")
+		if err == nil {
+			bgAudioPath = latest
+			fmt.Printf("[*] Выбрано фоновое аудио: %s\n", bgAudioPath)
 		}
 	}
 
@@ -194,6 +206,8 @@ func main() {
 		ScenarioOutput:   *scenarioOutputPtr,
 		ScenarioInput:    *scenarioInputPtr,
 		OutroDuration:    *outroDurationPtr,
+		BackgroundAudio:  bgAudioPath,
+		BackgroundVolume: *bgVolumePtr,
 	}
 
 	// Валидация конфигурации перед началом работы

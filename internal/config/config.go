@@ -29,6 +29,8 @@ type Config struct {
 	ScenarioOutput   string
 	ScenarioInput    string
 	OutroDuration    float64
+	BackgroundAudio  string
+	BackgroundVolume float64
 }
 
 type SegmentParams struct {
