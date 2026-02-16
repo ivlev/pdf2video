@@ -24,7 +24,15 @@ func (e *FFmpegEncoder) EncodeSegment(imagePath, videoPath string, params config
 }
 
 func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmpDir string, params config.Config) error {
-	if params.TransitionType == "" || params.TransitionType == "none" || len(segmentPaths) < 2 {
+	// Используем сложный фильтр (filter_complex), если:
+	// 1. Нужен переход (xfade)
+	// 2. Есть фоновое аудио для микширования
+	// 3. Есть основное аудио, которое нужно наложить на видеоряд
+	useComplex := (params.TransitionType != "" && params.TransitionType != "none" && len(segmentPaths) > 1) ||
+		params.BackgroundAudio != "" ||
+		params.AudioPath != ""
+
+	if !useComplex {
 		concatFilePath := filepath.Join(tmpDir, "inputs.txt")
 		f, err := os.Create(concatFilePath)
 		if err != nil {
@@ -63,26 +71,69 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 	lastOut := "[0:v]"
 	currentOffset := 0.0
 
-	for i := 1; i < len(segmentPaths); i++ {
-		duration := params.TotalDuration / float64(len(segmentPaths))
-		if i-1 < len(params.PageDurations) {
-			duration = params.PageDurations[i-1]
+	// 1. Видео фильтры (xfade)
+	if params.TransitionType != "" && params.TransitionType != "none" && len(segmentPaths) > 1 {
+		for i := 1; i < len(segmentPaths); i++ {
+			duration := params.TotalDuration / float64(len(segmentPaths))
+			if i-1 < len(params.PageDurations) {
+				duration = params.PageDurations[i-1]
+			}
+			currentOffset += duration - fadeDuration
+
+			nextIn := fmt.Sprintf("[%d:v]", i)
+			outName := fmt.Sprintf("[v%d]", i)
+			filterGraph += fmt.Sprintf("%s%sxfade=transition=%s:duration=%f:offset=%f%s;",
+				lastOut, nextIn, params.TransitionType, fadeDuration, currentOffset, outName)
+			lastOut = outName
 		}
-		currentOffset += duration - fadeDuration
-
-		nextIn := fmt.Sprintf("[%d:v]", i)
-		outName := fmt.Sprintf("[v%d]", i)
-		filterGraph += fmt.Sprintf("%s%sxfade=transition=%s:duration=%f:offset=%f%s;",
-			lastOut, nextIn, params.TransitionType, fadeDuration, currentOffset, outName)
-		lastOut = outName
+	} else if len(segmentPaths) > 1 {
+		// Если переходов нет, но сегментов много — используем concat filter
+		concatInputs := ""
+		for i := 0; i < len(segmentPaths); i++ {
+			concatInputs += fmt.Sprintf("[%d:v]", i)
+		}
+		filterGraph += fmt.Sprintf("%sconcat=n=%d:v=1:a=0[vconcat];", concatInputs, len(segmentPaths))
+		lastOut = "[vconcat]"
 	}
-	filterGraph = strings.TrimSuffix(filterGraph, ";")
 
-	args = append(args, "-filter_complex", filterGraph)
-	args = append(args, "-map", lastOut)
-
+	// 2. Аудио фильтры
+	audioOut := ""
 	if audioIndex != -1 {
-		args = append(args, "-map", fmt.Sprintf("%d:a", audioIndex), "-shortest")
+		if params.BackgroundAudio != "" {
+			bgIndex := audioIndex + 1
+			args = append(args, "-stream_loop", "-1", "-i", params.BackgroundAudio)
+
+			bgVol := params.BackgroundVolume
+			fadeInDur := 5.0
+			fadeOutDur := 5.0
+			totalDur := params.TotalDuration
+			if totalDur < fadeInDur+fadeOutDur {
+				fadeInDur = totalDur * 0.1
+				fadeOutDur = totalDur * 0.1
+			}
+
+			bgVolExpr := fmt.Sprintf("volume='%f*(if(lte(t,%f), 0.1 + 0.9*(t/%f), if(gte(t, %f), (%f-t)/%f, 1.0)))':eval=frame",
+				bgVol, fadeInDur, fadeInDur, totalDur-fadeOutDur, totalDur, fadeOutDur)
+
+			filterGraph += fmt.Sprintf("[%d:a]%s[bg_a];[%d:a]volume=1.0[main_a];[main_a][bg_a]amix=inputs=2:duration=first:dropout_transition=3[aout];",
+				bgIndex, bgVolExpr, audioIndex)
+			audioOut = "[aout]"
+		} else {
+			// Только основное аудио (прокидываем через фильтр для единообразия или просто мапим)
+			audioOut = fmt.Sprintf("%d:a", audioIndex)
+		}
+	}
+
+	filterGraph = strings.TrimSuffix(filterGraph, ";")
+	if filterGraph != "" {
+		args = append(args, "-filter_complex", filterGraph)
+	}
+
+	// Настройка маппинга
+	args = append(args, "-map", lastOut)
+	if audioOut != "" {
+		args = append(args, "-map", audioOut)
+		args = append(args, "-shortest")
 	}
 
 	qualityArgs := []string{}
