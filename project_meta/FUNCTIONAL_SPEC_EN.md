@@ -1,7 +1,7 @@
 # pdf2video Functional Specification
 
-**Version:** 0.8 (Outro Duration Control)
-**Date:** 2026-02-14
+**Version:** 0.8.0 (Finalized Outro & Background Audio)
+**Date:** 2026-02-16
 
 ## 1. Product Overview
 `pdf2video` is a high-performance CLI utility for automatically creating dynamic video presentations from static PDF files or image sets. The program transforms static slides into cinematic video sequences with precise camera control via YAML scenarios, audio synchronization, and hardware acceleration.
@@ -20,7 +20,9 @@
 - **Smart Zoom (Auto-Plan):** Automatic scenario generation based on slide content analysis.
 - **Transitions:** Support for all `xfade` effects (fade, wipe, slide, pixelize, etc.).
 - **Synchronization:** Video length perfectly matches the audio track duration.
-- **Outro Zoom-out:** Guaranteed camera return to 1:1 scale before each clip transition.
+- **Outro Zoom-out:** Guaranteed camera return to 1:1 scale before transitions.
+- **Dual-layer Audio:** Overlay background music (`input/background`) onto the main track with auto-looping and fades.
+- **Config Validation:** Strict input data verification before starting resource-heavy operations.
 - **Frame-Boundary Alignment:** All timing calculations are aligned to exact frame boundaries (FPS) to eliminate jitter and concatenation artifacts.
 
 ## 3. Architecture & Optimizations
@@ -67,8 +69,10 @@ The application automatically selects the best available encoder:
 | `-zoom-mode` | Zoom type (`center`, `random`, etc.) | `center` |
 | `-zoom-speed` | Zoom speed | `0.001` |
 | `-transition` | Transition type (`fade`, `wipeleft`...) | `fade` |
-| `-fade` | Transition duration (sec) | `0.5` |
+| `-fade` | Transition effect duration (sec) | `0.5` |
 | `-outro-duration` | Time to return to 1:1 before transition | `1.0` |
+| `-bg-audio` | Path to background track | auto |
+| `-bg-volume` | Background track volume (0.0 - 1.0) | `0.3` |
 
 ### Quality & Performance
 | Flag | Description | Default |
