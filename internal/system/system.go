@@ -196,3 +196,21 @@ func GetBestH264Encoder() (string, string) {
 
 	return "libx264", ""
 }
+
+var supportedFiltersCache = make(map[string]bool)
+
+func CheckFilterSupport(filterName string) bool {
+	if supported, exists := supportedFiltersCache[filterName]; exists {
+		return supported
+	}
+
+	cmd := exec.Command("ffmpeg", "-filters")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+
+	supported := strings.Contains(string(out), filterName)
+	supportedFiltersCache[filterName] = supported
+	return supported
+}
