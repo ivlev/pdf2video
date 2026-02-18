@@ -2,6 +2,7 @@ package source
 
 import (
 	"image"
+	"sync"
 
 	"github.com/gen2brain/go-fitz"
 )
@@ -16,6 +17,7 @@ type Source interface {
 type FitzPDFSource struct {
 	doc  *fitz.Document
 	path string
+	pool sync.Pool
 }
 
 func NewFitzPDFSource(path string) (*FitzPDFSource, error) {
@@ -23,7 +25,21 @@ func NewFitzPDFSource(path string) (*FitzPDFSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FitzPDFSource{doc: doc, path: path}, nil
+
+	f := &FitzPDFSource{
+		doc:  doc,
+		path: path,
+	}
+
+	f.pool.New = func() interface{} {
+		d, err := fitz.New(f.path)
+		if err != nil {
+			return nil
+		}
+		return d
+	}
+
+	return f, nil
 }
 
 func (f *FitzPDFSource) PageCount() int {
@@ -39,11 +55,13 @@ func (f *FitzPDFSource) GetPageDimensions(index int) (float64, float64, error) {
 }
 
 func (f *FitzPDFSource) RenderPage(index int, dpi int) (image.Image, error) {
-	workerDoc, err := fitz.New(f.path)
-	if err != nil {
-		return nil, err
+	docObj := f.pool.Get()
+	if docObj == nil {
+		return nil, image.ErrFormat // Or a more appropriate error
 	}
-	defer workerDoc.Close()
+	workerDoc := docObj.(*fitz.Document)
+	defer f.pool.Put(workerDoc)
+
 	return workerDoc.ImageDPI(index, float64(dpi))
 }
 

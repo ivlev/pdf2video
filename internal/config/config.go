@@ -42,6 +42,7 @@ type SegmentParams struct {
 	FadeDuration  float64
 	OutroDuration float64
 	PageIndex     int
+	Filter        string
 }
 
 var SupportedTransitions = []string{

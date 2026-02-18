@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -59,7 +60,7 @@ func main() {
 	flag.Parse()
 
 	// Версия сборки (можно переопределить через -ldflags)
-	buildVersion := "dev"
+	buildVersion := "0.9.0"
 
 	width, height := *widthPtr, *heightPtr
 	switch *presetPtr {
@@ -220,7 +221,7 @@ func main() {
 	eff := &effects.DefaultEffect{}
 
 	project := engine.NewVideoProject(cfg, src, ve, eff)
-	if err := project.Run(); err != nil {
+	if err := project.Run(context.Background()); err != nil {
 		log.Fatalf("[-] Ошибка проекта: %v", err)
 	}
 

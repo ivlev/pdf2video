@@ -1,18 +1,17 @@
 package engine
 
 import (
-	"bytes"
+	"context"
 	"fmt"
 	"image"
-	"image/draw"
-	"io"
 	"log"
 	"math"
 	"math/rand"
 	"os"
-	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/ivlev/pdf2video/internal/analyzer"
@@ -29,18 +28,41 @@ type VideoProject struct {
 	Encoder video.VideoEncoder
 	Effect  effects.Effect
 	tempDir string
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 func NewVideoProject(cfg *config.Config, src source.Source, ve video.VideoEncoder, eff effects.Effect) *VideoProject {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &VideoProject{
 		Config:  cfg,
 		Source:  src,
 		Encoder: ve,
 		Effect:  eff,
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
-func (p *VideoProject) Run() error {
+func (p *VideoProject) Run(ctx context.Context) error {
+	// Если передан внешний контекст, связываем его с нашим
+	if ctx != nil {
+		go func() {
+			<-ctx.Done()
+			p.cancel()
+		}()
+	}
+
+	// Обработка сигналов OS для корректного прерывания
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("\n[*] Получен сигнал: %v. Завершение работы...\n", sig)
+		p.cancel()
+	}()
+
 	startTime := time.Now()
 	var renderStart, renderEnd, encodeStart, encodeEnd, concatStart time.Time
 
@@ -58,6 +80,11 @@ func (p *VideoProject) Run() error {
 
 	// Обработка сценариев
 	if p.Config.GenerateScenario {
+		select {
+		case <-p.ctx.Done():
+			return p.ctx.Err()
+		default:
+		}
 		return p.handleGenerateScenario(pageCount)
 	}
 
@@ -175,6 +202,11 @@ func (p *VideoProject) Run() error {
 		go func() {
 			defer wgRender.Done()
 			for i := range jobs {
+				select {
+				case <-p.ctx.Done():
+					return
+				default:
+				}
 				img, err := p.Source.RenderPage(i, p.Config.DPI)
 				if err != nil {
 					log.Printf("[!] Error rendering page %d: %v", i, err)
@@ -199,6 +231,11 @@ func (p *VideoProject) Run() error {
 		go func() {
 			defer wgEncode.Done()
 			for res := range renderResults {
+				select {
+				case <-p.ctx.Done():
+					return
+				default:
+				}
 				i := res.Index
 				img := res.Image
 
@@ -217,65 +254,11 @@ func (p *VideoProject) Run() error {
 					PageIndex:     i,
 				}
 
-				filter := p.Effect.GenerateFilter(params)
+				params.Filter = p.Effect.GenerateFilter(params)
 
-				inputW, inputH := img.Bounds().Dx(), img.Bounds().Dy()
-				qualityArgs := []string{}
-				switch p.Config.VideoEncoder {
-				case "h264_videotoolbox":
-					// VideoToolbox часто не поддерживает -q:v напрямую на всех версиях. Используем битрейт.
-					bitrate := p.Config.Quality * 100 // кбит/с. 75 -> 7.5Мбит/с
-					qualityArgs = append(qualityArgs, "-b:v", fmt.Sprintf("%dk", bitrate))
-				case "h264_nvenc":
-					qualityArgs = append(qualityArgs, "-cq", fmt.Sprintf("%d", p.Config.Quality))
-				default: // libx264
-					qualityArgs = append(qualityArgs, "-crf", fmt.Sprintf("%d", p.Config.Quality), "-preset", "medium")
-				}
-
-				// Используем rawvideo через stdin для исключения I/O на диск
-				ffmpegArgs := []string{
-					"-y",
-					"-f", "rawvideo",
-					"-pixel_format", "rgba",
-					"-video_size", fmt.Sprintf("%dx%d", inputW, inputH),
-					"-i", "-",
-					"-vf", filter,
-					"-t", fmt.Sprintf("%f", duration),
-					"-r", fmt.Sprintf("%d", p.Config.FPS),
-					"-pix_fmt", "yuv420p",
-					"-c:v", p.Config.VideoEncoder,
-				}
-				ffmpegArgs = append(ffmpegArgs, qualityArgs...)
-				ffmpegArgs = append(ffmpegArgs, segPath)
-
-				cmd := exec.Command("ffmpeg", ffmpegArgs...)
-				var out bytes.Buffer
-				cmd.Stdout = &out
-				cmd.Stderr = &out
-
-				stdin, err := cmd.StdinPipe()
+				err := p.Encoder.EncodeSegment(p.ctx, img, segPath, params, p.Config.VideoEncoder, p.Config.Quality)
 				if err != nil {
-					log.Printf("[!] StdinPipe error page %d: %v", i, err)
-					continue
-				}
-
-				if err := cmd.Start(); err != nil {
-					log.Printf("[!] FFmpeg start error page %d: %v", i, err)
-					continue
-				}
-
-				// Передаем один кадр raw-данных. zoompan с d=N размножит его.
-				if err := p.writeRawRGBA(stdin, img); err != nil {
-					log.Printf("[!] Write raw error page %d: %v", i, err)
-					stdin.Close()
-					continue
-				}
-				stdin.Close()
-
-				if err := cmd.Wait(); err != nil {
-					log.Printf("[!] FFmpeg wait error page %d: %v\nLog: %s", i, err, out.String())
-					// Don't continue silently. If a segment fails, the whole video will be broken.
-					// We should probably set a failure flag.
+					log.Printf("[!] EncodeSegment error page %d: %v", i, err)
 					continue
 				}
 
@@ -302,6 +285,13 @@ func (p *VideoProject) Run() error {
 	wgEncode.Wait()
 	encodeEnd = time.Now()
 
+	// Проверяем, был ли процесс прерван
+	select {
+	case <-p.ctx.Done():
+		return fmt.Errorf("процесс прерван пользователем")
+	default:
+	}
+
 	// Проверяем, все ли сегменты готовы
 	for i, r := range results {
 		if r == "" {
@@ -311,8 +301,13 @@ func (p *VideoProject) Run() error {
 
 	fmt.Println("[*] Сборка финального видео (с эффектами переходов)...")
 	concatStart = time.Now()
-	err = p.Encoder.Concatenate(results, p.Config.OutputVideo, p.tempDir, *p.Config)
+	err = p.Encoder.Concatenate(p.ctx, results, p.Config.OutputVideo, p.tempDir, *p.Config)
 	if err != nil {
+		select {
+		case <-p.ctx.Done():
+			return fmt.Errorf("сборка прервана пользователем")
+		default:
+		}
 		return fmt.Errorf("ошибка сборки финального видео: %v", err)
 	}
 
@@ -429,6 +424,11 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 
 	var slides []director.Slide
 	for i := 0; i < pageCount; i++ {
+		select {
+		case <-p.ctx.Done():
+			return p.ctx.Err()
+		default:
+		}
 		fmt.Printf("[*] Анализ страницы %d/%d...\n", i+1, pageCount)
 
 		img, err := p.Source.RenderPage(i, p.Config.DPI)
@@ -495,16 +495,4 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 
 	fmt.Printf("[+++] Успех! Сценарий сохранен: %s\n", outputPath)
 	return nil
-}
-
-func (p *VideoProject) writeRawRGBA(w io.Writer, img image.Image) error {
-	bounds := img.Bounds()
-	rgba, ok := img.(*image.RGBA)
-	// Проверяем, является ли изображение уже RGBA и имеет ли стандартный шаг (stride)
-	if !ok || rgba.Stride != bounds.Dx()*4 || rgba.Rect.Min.X != 0 || rgba.Rect.Min.Y != 0 {
-		rgba = image.NewRGBA(bounds)
-		draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
-	}
-	_, err := w.Write(rgba.Pix)
-	return err
 }
