@@ -113,13 +113,6 @@ func (e *ScenarioEffect) GenerateFilter(p config.SegmentParams) string {
 	// Режим отладки: собираем цепочку фильтров динамически
 	filters := []string{aspectFilter}
 
-	if system.CheckFilterSupport("drawbox") {
-		boxFilter := renderer.GenerateDebugBoxFilter(scaledKeyframes, p.FPS, p.Width*2, p.Height*2)
-		if boxFilter != "" {
-			filters = append(filters, boxFilter)
-		}
-	}
-
 	if zoomFilter != "" {
 		filters = append(filters, zoomFilter)
 	}

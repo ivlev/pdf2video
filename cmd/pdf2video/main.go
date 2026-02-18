@@ -63,6 +63,9 @@ func main() {
 	// Версия сборки (можно переопределить через -ldflags)
 	buildVersion := "0.9.0"
 
+	fmt.Printf("--- PDF2Video v%s ---\n", buildVersion)
+	fmt.Println("[*] Высокопроизводительный движок генерации динамичных видео")
+
 	width, height := *widthPtr, *heightPtr
 	switch *presetPtr {
 	case "16:9":
