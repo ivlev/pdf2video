@@ -31,7 +31,20 @@ func (e *FFmpegEncoder) EncodeSegment(
 ) error {
 	inputW, inputH := img.Bounds().Dx(), img.Bounds().Dy()
 
-	args := e.buildFFmpegArgs(inputW, inputH, videoPath, params, encoderName, quality)
+	// Создаем временный файл для фильтра, чтобы избежать лимитов на размер аргументов командной строки
+	filterFile, err := os.CreateTemp("", "ffmpeg_filter_*.txt")
+	if err != nil {
+		return fmt.Errorf("failed to create temp filter file: %w", err)
+	}
+	defer os.Remove(filterFile.Name())
+
+	if _, err := filterFile.WriteString(params.Filter); err != nil {
+		filterFile.Close()
+		return fmt.Errorf("failed to write filter: %w", err)
+	}
+	filterFile.Close()
+
+	args := e.buildFFmpegArgs(inputW, inputH, videoPath, params, encoderName, quality, filterFile.Name())
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
@@ -64,6 +77,7 @@ func (e *FFmpegEncoder) buildFFmpegArgs(
 	params config.SegmentParams,
 	encoderName string,
 	quality int,
+	filterPath string,
 ) []string {
 	args := []string{
 		"-y",
@@ -71,7 +85,7 @@ func (e *FFmpegEncoder) buildFFmpegArgs(
 		"-pixel_format", "rgba",
 		"-video_size", fmt.Sprintf("%dx%d", inputW, inputH),
 		"-i", "-",
-		"-vf", params.Filter,
+		"-filter_script:v", filterPath,
 		"-t", fmt.Sprintf("%f", params.Duration),
 		"-r", fmt.Sprintf("%d", params.FPS),
 		"-pix_fmt", "yuv420p",
@@ -207,7 +221,20 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segmentPaths []string, 
 
 	filterGraph = strings.TrimSuffix(filterGraph, ";")
 	if filterGraph != "" {
-		args = append(args, "-filter_complex", filterGraph)
+		// Создаем временный файл для сложного фильтра
+		filterFile, err := os.CreateTemp("", "ffmpeg_complex_*.txt")
+		if err != nil {
+			return fmt.Errorf("failed to create temp complex filter file: %w", err)
+		}
+		defer os.Remove(filterFile.Name())
+
+		if _, err := filterFile.WriteString(filterGraph); err != nil {
+			filterFile.Close()
+			return fmt.Errorf("failed to write complex filter: %w", err)
+		}
+		filterFile.Close()
+
+		args = append(args, "-filter_complex_script", filterFile.Name())
 	}
 
 	// Настройка маппинга

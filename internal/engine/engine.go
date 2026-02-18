@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"image/color"
+	"image/draw"
 	"log"
 	"math"
 	"math/rand"
@@ -252,9 +254,16 @@ func (p *VideoProject) Run(ctx context.Context) error {
 					FadeDuration:  p.Config.FadeDuration,
 					OutroDuration: p.Config.OutroDuration,
 					PageIndex:     i,
+					Debug:         p.Config.Debug,
 				}
 
 				params.Filter = p.Effect.GenerateFilter(params)
+
+				if p.Config.Debug {
+					if se, ok := p.Effect.(*effects.ScenarioEffect); ok {
+						img = p.debugDrawScenario(img, se, i)
+					}
+				}
 
 				err := p.Encoder.EncodeSegment(p.ctx, img, segPath, params, p.Config.VideoEncoder, p.Config.Quality)
 				if err != nil {
@@ -495,4 +504,41 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 
 	fmt.Printf("[+++] Успех! Сценарий сохранен: %s\n", outputPath)
 	return nil
+}
+
+func (p *VideoProject) debugDrawScenario(img image.Image, se *effects.ScenarioEffect, pageIndex int) image.Image {
+	if pageIndex >= len(se.Scenario.Slides) {
+		return img
+	}
+	slide := se.Scenario.Slides[pageIndex]
+
+	// Create a writable copy
+	bounds := img.Bounds()
+	rgba := image.NewRGBA(bounds)
+	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+
+	// Draw rectangles for each keyframe
+	red := color.RGBA{255, 0, 0, 255}
+	for _, kf := range slide.Keyframes {
+		p.drawHollowRect(rgba, kf.Rect, red)
+	}
+
+	return rgba
+}
+
+func (p *VideoProject) drawHollowRect(img *image.RGBA, r director.Rectangle, c color.Color) {
+	thickness := 4
+	x := int(r.X)
+	y := int(r.Y)
+	w := int(r.W)
+	h := int(r.H)
+
+	// Top
+	draw.Draw(img, image.Rect(x, y, x+w, y+thickness), &image.Uniform{c}, image.Point{}, draw.Src)
+	// Bottom
+	draw.Draw(img, image.Rect(x, y+h-thickness, x+w, y+h), &image.Uniform{c}, image.Point{}, draw.Src)
+	// Left
+	draw.Draw(img, image.Rect(x, y, x+thickness, y+h), &image.Uniform{c}, image.Point{}, draw.Src)
+	// Right
+	draw.Draw(img, image.Rect(x+w-thickness, y, x+w, y+h), &image.Uniform{c}, image.Point{}, draw.Src)
 }

@@ -1,7 +1,7 @@
 # pdf2video Functional Specification
 
-**Version:** 0.8.0 (Finalized Outro & Background Audio)
-**Date:** 2026-02-16
+**Version:** 0.9.0 (Modular Encoding & Graceful Shutdown)
+**Date:** 2026-02-18
 
 ## 1. Product Overview
 `pdf2video` is a high-performance CLI utility for automatically creating dynamic video presentations from static PDF files or image sets. The program transforms static slides into cinematic video sequences with precise camera control via YAML scenarios, audio synchronization, and hardware acceleration.
@@ -22,8 +22,9 @@
 - **Synchronization:** Video length perfectly matches the audio track duration.
 - **Outro Zoom-out:** Guaranteed camera return to 1:1 scale before transitions.
 - **Dual-layer Audio:** Overlay background music (`input/background`) onto the main track with auto-looping and fades.
-- **Config Validation:** Strict input data verification before starting resource-heavy operations.
-- **Frame-Boundary Alignment:** All timing calculations are aligned to exact frame boundaries (FPS) to eliminate jitter and concatenation artifacts.
+- **Graceful Shutdown:** Clean FFmpeg termination and temporary file cleanup on Ctrl+C.
+- **Modular Architecture:** Encoder logic isolated in `video` package for easier maintenance.
+- **Frame-Boundary Alignment:** All timing calculations are aligned to exact frame boundaries (FPS) to eliminate jitter.
 
 ## 3. Architecture & Optimizations
 
@@ -37,6 +38,7 @@ The application automatically selects the best available encoder:
 - **Render Pool (CPU):** Renders PDF pages to images in parallel.
 - **Encode Pool (GPU):** Encodes video segments using hardware acceleration.
 - **Zero-Disk I/O:** Images are transferred directly to FFmpeg via `stdin pipe` in `rawvideo` format.
+- **PDF Document Pooling:** Uses `sync.Pool` to reuse open PDF documents, eliminating redundant I/O during parallel rendering.
 
 ### 3.3. Smart Zoom & Scenario Rendering
 - **Analyze:** ROI detection (headers, text) via `ContrastDetector`.
@@ -44,7 +46,17 @@ The application automatically selects the best available encoder:
 - **Scale:** Scenario timings are automatically scaled to match the total audio duration.
 - **Render:** `ScenarioEffect` transforms YAML keyframes into complex piecewise `zoompan` expressions.
 
-## 4. Configuration Reference (Flags)
+## 4. Technical Excellence & Reliability
+
+### 4.1. Scenario Scalability
+- **$O(N)$ Expression Optimization:** Complex pan filters are mathematically optimized, allowing scenarios with hundreds of keyframes without performance degradation or FFmpeg buffer overflows.
+- **Filter Scripts:** Uses `-filter_script` to bypass OS command-line length limits, ensuring stability for long, complex projects.
+
+### 4.2. Visual Debugging
+- **Debug Overlay:** Integrated visualizer to see region-of-interest bounding boxes directly in the generated video for easier scenario fine-tuning.
+- **Go-side Drawing:** Critical debug elements (camera tracking) are rendered in the Go engine, guaranteed to show even if FFmpeg filters are restricted.
+
+## 5. Configuration Reference (Flags)
 
 ### Basics
 | Flag | Description | Default |
@@ -80,6 +92,7 @@ The application automatically selects the best available encoder:
 | `-dpi` | PDF rendering quality | 300 |
 | `-quality` | Quality (CRF for x264, Bitrate for GPU) | `auto` (x264: 23, VT: 75) |
 | `-stats` | Output performance metrics | `false` |
+| `-debug` | Debug mode: draw camera paths and stats | `false` |
 | `-workers` | Number of render threads | All CPU cores |
 
 ### Smart Zoom (Analysis & Scenarios)
