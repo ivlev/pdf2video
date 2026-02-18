@@ -1,7 +1,11 @@
 package video
 
 import (
+	"context"
 	"fmt"
+	"image"
+	"image/draw"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,19 +15,96 @@ import (
 )
 
 type VideoEncoder interface {
-	EncodeSegment(imagePath, videoPath string, params config.SegmentParams) error
-	Concatenate(segmentPaths []string, finalPath string, tmpDir string, params config.Config) error
+	EncodeSegment(ctx context.Context, img image.Image, videoPath string, params config.SegmentParams, encoderName string, quality int) error
+	Concatenate(ctx context.Context, segmentPaths []string, finalPath string, tmpDir string, params config.Config) error
 }
 
 type FFmpegEncoder struct{}
 
-func (e *FFmpegEncoder) EncodeSegment(imagePath, videoPath string, params config.SegmentParams) error {
-	// EncodeSegment is currently handled within the engine's worker loop,
-	// but can be moved here in the future for better encapsulation.
+func (e *FFmpegEncoder) EncodeSegment(
+	ctx context.Context,
+	img image.Image,
+	videoPath string,
+	params config.SegmentParams,
+	encoderName string,
+	quality int,
+) error {
+	inputW, inputH := img.Bounds().Dx(), img.Bounds().Dy()
+
+	args := e.buildFFmpegArgs(inputW, inputH, videoPath, params, encoderName, quality)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("stdin pipe error: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("ffmpeg start error: %w", err)
+	}
+
+	// Запись raw RGBA данных
+	if err := e.writeRawRGBA(stdin, img); err != nil {
+		stdin.Close()
+		return fmt.Errorf("write raw error: %w", err)
+	}
+	stdin.Close()
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("ffmpeg wait error: %w", err)
+	}
+
 	return nil
 }
 
-func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmpDir string, params config.Config) error {
+func (e *FFmpegEncoder) buildFFmpegArgs(
+	inputW, inputH int,
+	videoPath string,
+	params config.SegmentParams,
+	encoderName string,
+	quality int,
+) []string {
+	args := []string{
+		"-y",
+		"-f", "rawvideo",
+		"-pixel_format", "rgba",
+		"-video_size", fmt.Sprintf("%dx%d", inputW, inputH),
+		"-i", "-",
+		"-vf", params.Filter,
+		"-t", fmt.Sprintf("%f", params.Duration),
+		"-r", fmt.Sprintf("%d", params.FPS),
+		"-pix_fmt", "yuv420p",
+		"-c:v", encoderName,
+	}
+
+	// Качество в зависимости от энкодера
+	switch encoderName {
+	case "h264_videotoolbox":
+		bitrate := quality * 100
+		args = append(args, "-b:v", fmt.Sprintf("%dk", bitrate))
+	case "h264_nvenc":
+		args = append(args, "-cq", fmt.Sprintf("%d", quality))
+	default: // libx264
+		args = append(args, "-crf", fmt.Sprintf("%d", quality), "-preset", "medium")
+	}
+
+	args = append(args, videoPath)
+	return args
+}
+
+func (e *FFmpegEncoder) writeRawRGBA(w io.Writer, img image.Image) error {
+	bounds := img.Bounds()
+	rgba, ok := img.(*image.RGBA)
+	if !ok || rgba.Stride != bounds.Dx()*4 || rgba.Rect.Min.X != 0 || rgba.Rect.Min.Y != 0 {
+		rgba = image.NewRGBA(bounds)
+		draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+	}
+	_, err := w.Write(rgba.Pix)
+	return err
+}
+
+func (e *FFmpegEncoder) Concatenate(ctx context.Context, segmentPaths []string, finalPath string, tmpDir string, params config.Config) error {
 	// Используем сложный фильтр (filter_complex), если:
 	// 1. Нужен переход (xfade)
 	// 2. Есть фоновое аудио для микширования
@@ -44,7 +125,7 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 		}
 		f.Close()
 
-		cmd := exec.Command("ffmpeg", "-y",
+		cmd := exec.CommandContext(ctx, "ffmpeg", "-y",
 			"-f", "concat", "-safe", "0", "-i", concatFilePath,
 			"-c", "copy", finalPath,
 		)
@@ -152,7 +233,7 @@ func (e *FFmpegEncoder) Concatenate(segmentPaths []string, finalPath string, tmp
 	args = append(args, qualityArgs...)
 	args = append(args, finalPath)
 
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg xfade error: %v, output: %s", err, string(out))
 	}
