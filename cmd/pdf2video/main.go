@@ -56,6 +56,7 @@ func main() {
 	outroDurationPtr := flag.Float64("outro-duration", 1.0, "Длительность возврата камеры к зуму 1:1 перед переходом (сек)")
 	bgAudioPtr := flag.String("bg-audio", "", "Путь к фоновому аудио (по умолчанию: самый свежий файл в input/background/)")
 	bgVolumePtr := flag.Float64("bg-volume", 0.3, "Громкость фонового аудио (0.0 - 1.0, по умолчанию 0.3)")
+	debugPtr := flag.Bool("debug", false, "Режим отладки: показывать рамки отслеживания камеры")
 
 	flag.Parse()
 
@@ -209,6 +210,7 @@ func main() {
 		OutroDuration:    *outroDurationPtr,
 		BackgroundAudio:  bgAudioPath,
 		BackgroundVolume: *bgVolumePtr,
+		Debug:            *debugPtr,
 	}
 
 	// Валидация конфигурации перед началом работы

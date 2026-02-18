@@ -81,5 +81,10 @@ func (e *DefaultEffect) GenerateFilter(p config.SegmentParams) string {
 		zFormula, int(fTotal), p.Width, p.Height, zoomX, zoomY, p.FPS,
 	)
 
+	if p.Debug {
+		textFilter := fmt.Sprintf("drawtext=text='Slide %d | Zoom %%{zoom}':x=10:y=10:fontsize=24:fontcolor=yellow:box=1:boxcolor=black@0.5", p.PageIndex+1)
+		return fmt.Sprintf("%s,%s,%s,scale=%d:%d", aspectFilter, zoomFilter, textFilter, p.Width, p.Height)
+	}
+
 	return fmt.Sprintf("%s,%s,scale=%d:%d", aspectFilter, zoomFilter, p.Width, p.Height)
 }

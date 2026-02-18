@@ -94,6 +94,12 @@ func (e *ScenarioEffect) GenerateFilter(p config.SegmentParams) string {
 
 	// Используем генератор фильтра с масштабированной длительностью и кадрами
 	zoomFilter := renderer.GenerateZoomPanFilter(scaledKeyframes, p.Duration, p.FPS, p.Width, p.Height)
+	debugFilter := ""
+	if p.Debug {
+		boxFilter := renderer.GenerateDebugBoxFilter(scaledKeyframes, p.FPS, p.Width*2, p.Height*2)
+		textFilter := fmt.Sprintf("drawtext=text='Slide %d | Time %%{pts\\:hms} | Zoom %%{zoom}':x=10:y=10:fontsize=24:fontcolor=yellow:box=1:boxcolor=black@0.5", p.PageIndex+1)
+		debugFilter = fmt.Sprintf("%s,%s", boxFilter, textFilter)
+	}
 
 	// Aspect ratio handling (2x scale for better zoom quality as done in DefaultEffect)
 	aspectFilter := fmt.Sprintf(
@@ -102,7 +108,18 @@ func (e *ScenarioEffect) GenerateFilter(p config.SegmentParams) string {
 	)
 
 	if zoomFilter == "" {
+		if debugFilter != "" {
+			return fmt.Sprintf("%s,%s,scale=%d:%d", aspectFilter, debugFilter, p.Width, p.Height)
+		}
 		return fmt.Sprintf("%s,scale=%d:%d", aspectFilter, p.Width, p.Height)
+	}
+
+	if debugFilter != "" {
+		// Draw box BEFORE zoompan (so it shows the target area)
+		// Draw text AFTER zoompan (so it's readable)
+		boxFilter := renderer.GenerateDebugBoxFilter(scaledKeyframes, p.FPS, p.Width*2, p.Height*2)
+		textFilter := fmt.Sprintf("drawtext=text='Slide %d | Zoom %%{zoom}':x=10:y=10:fontsize=24:fontcolor=yellow:box=1:boxcolor=black@0.5", p.PageIndex+1)
+		return fmt.Sprintf("%s,%s,%s,%s,scale=%d:%d", aspectFilter, boxFilter, zoomFilter, textFilter, p.Width, p.Height)
 	}
 
 	return fmt.Sprintf("%s,%s,scale=%d:%d", aspectFilter, zoomFilter, p.Width, p.Height)

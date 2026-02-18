@@ -31,6 +31,7 @@ type Config struct {
 	OutroDuration    float64
 	BackgroundAudio  string
 	BackgroundVolume float64
+	Debug            bool
 }
 
 type SegmentParams struct {
@@ -43,6 +44,7 @@ type SegmentParams struct {
 	OutroDuration float64
 	PageIndex     int
 	Filter        string
+	Debug         bool
 }
 
 var SupportedTransitions = []string{

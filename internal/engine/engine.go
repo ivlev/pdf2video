@@ -252,6 +252,7 @@ func (p *VideoProject) Run(ctx context.Context) error {
 					FadeDuration:  p.Config.FadeDuration,
 					OutroDuration: p.Config.OutroDuration,
 					PageIndex:     i,
+					Debug:         p.Config.Debug,
 				}
 
 				params.Filter = p.Effect.GenerateFilter(params)

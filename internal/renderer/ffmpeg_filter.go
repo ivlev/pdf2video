@@ -27,6 +27,21 @@ func GenerateZoomPanFilter(keyframes []director.Keyframe, duration float64, fps 
 		zoomExpr, xExpr, yExpr, totalFrames, width, height, fps)
 }
 
+// GenerateDebugBoxFilter creates a drawbox filter that matches the zoompan focus
+func GenerateDebugBoxFilter(keyframes []director.Keyframe, fps int, width, height int) string {
+	if len(keyframes) == 0 {
+		return ""
+	}
+	zoomExpr := buildZoomExpression(keyframes, fps)
+	// Actually, zoompan's x/y are the top-left of the CROP.
+	// So drawbox at (x, y) with (iw/zoom, ih/zoom) should be exactly the crop area.
+	xPan := buildPanExpression(keyframes, fps, width, true)
+	yPan := buildPanExpression(keyframes, fps, height, false)
+
+	return fmt.Sprintf("drawbox=x='%s':y='%s':w='iw/(%s)':h='ih/(%s)':color=red:t=5",
+		xPan, yPan, zoomExpr, zoomExpr)
+}
+
 // buildZoomExpression creates piecewise zoom expression for FFmpeg
 func buildZoomExpression(keyframes []director.Keyframe, fps int) string {
 	if len(keyframes) == 0 {
