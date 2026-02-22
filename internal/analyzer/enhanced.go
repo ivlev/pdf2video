@@ -19,6 +19,8 @@ type EnhancedDetector struct {
 	ColorVarianceWeight float64
 	SizeWeight          float64
 	PositionWeight      float64
+
+	prioritizer *BlockPrioritizer
 }
 
 func NewEnhancedDetector() *EnhancedDetector {
@@ -32,6 +34,8 @@ func NewEnhancedDetector() *EnhancedDetector {
 		ColorVarianceWeight: 0.25,
 		SizeWeight:          0.20,
 		PositionWeight:      0.20,
+
+		prioritizer: NewBlockPrioritizer(),
 	}
 }
 
@@ -60,6 +64,9 @@ func (d *EnhancedDetector) Detect(img image.Image) ([]Block, error) {
 		return blocks[i].Score > blocks[j].Score
 	})
 
+	// Semantic Prioritization
+	blocks = d.prioritizer.Prioritize(blocks, bounds.Dx(), bounds.Dy())
+
 	if len(blocks) > d.MaxBlocks {
 		blocks = blocks[:d.MaxBlocks]
 	}
@@ -85,7 +92,7 @@ func (d *EnhancedDetector) analyzeBlock(img image.Image, rect image.Rectangle, p
 		sizeScore*d.SizeWeight +
 		positionScore*d.PositionWeight
 
-	blockType := d.classifyBlock(metrics)
+	blockType := d.classifyBlock(metrics, rect, pageBounds)
 
 	return Block{
 		Rect:       rect,
@@ -161,10 +168,19 @@ func (d *EnhancedDetector) calculateMetrics(img image.Image, rect image.Rectangl
 	}
 }
 
-func (d *EnhancedDetector) classifyBlock(m BlockMetrics) BlockType {
-	if m.AspectRatio > 3.0 && m.EdgeDensity < 0.2 {
+func (d *EnhancedDetector) classifyBlock(m BlockMetrics, rect image.Rectangle, pageBounds image.Rectangle) BlockType {
+	relY := float64(rect.Min.Y) / float64(pageBounds.Dy())
+
+	// Headers are usually at the top (top 15%)
+	if relY < 0.15 && m.AspectRatio > 3.0 && m.EdgeDensity < 0.2 {
 		return BlockTypeHeader
 	}
+
+	// Footers are usually at the bottom (bottom 10%)
+	if relY > 0.90 && m.AspectRatio > 3.0 {
+		return BlockTypeFooter
+	}
+
 	if m.EdgeDensity > 0.2 {
 		if m.ColorVariance > 15000 {
 			return BlockTypeDiagram
