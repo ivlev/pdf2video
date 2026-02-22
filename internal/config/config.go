@@ -32,6 +32,7 @@ type Config struct {
 	BackgroundAudio  string
 	BackgroundVolume float64
 	Debug            bool
+	MaxMemoryMB      int
 }
 
 type SegmentParams struct {

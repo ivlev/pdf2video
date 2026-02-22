@@ -34,6 +34,7 @@ type VideoProject struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	cache   *system.RenderCache
+	memory  *system.MemoryManager
 }
 
 func NewVideoProject(cfg *config.Config, src source.Source, ve video.VideoEncoder, eff effects.Effect) *VideoProject {
@@ -46,6 +47,7 @@ func NewVideoProject(cfg *config.Config, src source.Source, ve video.VideoEncode
 		ctx:     ctx,
 		cancel:  cancel,
 		cache:   system.NewRenderCache("cache/renders"),
+		memory:  system.NewMemoryManager(cfg.MaxMemoryMB),
 	}
 }
 
@@ -196,8 +198,10 @@ func (p *VideoProject) Run(ctx context.Context) error {
 	var wgEncode sync.WaitGroup
 
 	// 1. Render Pool (CPU bound)
-	// Используем все доступные ядра для рендеринга PDF
-	numRenderWorkers := p.Config.Workers
+	// Используем все доступные ядра для рендеринга PDF, но ограничиваем бюджетом памяти
+	frameSize := system.GetFrameSize(p.Config.Width, p.Config.Height)
+	numRenderWorkers := p.memory.GetRecommendedWorkers(frameSize, p.Config.Workers)
+
 	if numRenderWorkers > pageCount {
 		numRenderWorkers = pageCount
 	}
@@ -213,6 +217,11 @@ func (p *VideoProject) Run(ctx context.Context) error {
 				default:
 				}
 				dpi := p.calculateOptimalDPI(i)
+
+				frameSize := system.GetFrameSize(p.Config.Width, p.Config.Height)
+				if err := p.memory.Acquire(p.ctx, frameSize); err != nil {
+					return
+				}
 
 				var img image.Image
 				var err error
@@ -297,6 +306,7 @@ func (p *VideoProject) Run(ctx context.Context) error {
 				// Возвращаем буфер в пул после использования
 				if rgba, ok := img.(*image.RGBA); ok {
 					system.PutImage(rgba)
+					p.memory.Release(system.GetFrameSize(p.Config.Width, p.Config.Height))
 				}
 
 				if err != nil {
@@ -478,10 +488,17 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 
 		// Для анализа используем DPI из конфига (или адаптивный, если захотим)
 		dpi := p.Config.DPI
+		frameSize := system.GetFrameSize(p.Config.Width, p.Config.Height)
+
 		cacheKey := p.cache.GetKey(p.Config.InputPath, i, dpi)
 		if cachedImg, found := p.cache.Get(cacheKey); found {
 			img = cachedImg
 		} else {
+			// Бронируем память под новый рендеринг
+			if err := p.memory.Acquire(p.ctx, frameSize); err != nil {
+				return err
+			}
+
 			img, err = p.Source.RenderPage(i, dpi)
 			if err == nil {
 				_ = p.cache.Put(cacheKey, img)
@@ -497,6 +514,7 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 		blocks, err := det.Detect(img)
 		if rgba, ok := img.(*image.RGBA); ok {
 			system.PutImage(rgba)
+			p.memory.Release(frameSize)
 		}
 
 		if err != nil {
