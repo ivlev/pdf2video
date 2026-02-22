@@ -45,7 +45,8 @@ The application automatically selects the best available encoder:
 - **Adaptive DPI:** Automatic calculation of the minimum required pixel density (DPI) for the target video resolution with a 50% margin for zoom. Reduces CPU load by 20-40%.
 
 ### 3.3. Smart Zoom & Scenario Rendering
-- **Analyze:** ROI detection (headers, text) via `ContrastDetector`.
+- **Analyze:** ROI detection (headers, text) via `EnhancedDetector` (previously `ContrastDetector`).
+- **Score:** Semantic ranking of blocks via `BlockPrioritizer` based on content type and position.
 - **Plan:** Automatic YAML scenario generation.
 - **Scale:** Scenario timings are automatically scaled to match the total audio duration.
 - **Render:** `ScenarioEffect` transforms YAML keyframes into complex piecewise `zoompan` expressions.
@@ -141,8 +142,10 @@ Analyzes slides, detects key blocks, and creates a YAML scenario in `internal/sc
 - **CI/CD:** Automatic quality control via GitHub Actions.
 
 ## 17. Smart Directing 2.0 (Advanced Camera Logic)
-**PLANNED.**
-- **Content-Aware Analysis:** Evaluation of block importance via edge density and color variance.
-- **Path Optimization:** Intelligent sorting of ROIs to minimize unnecessary camera travel.
-- **Adaptive Dynamics:** Dynamic adjustment of travel speeds and dwell times based on content type.
-- **Cinematic Smoothing:** Smooth camera trajectories (Splines) and motion inertia physics.
+**IN PROGRESS (Beta)**
+- **Content-Aware Analysis:** Evaluation of block importance via Edge Density and Color Variance. Helps differentiate between text and graphics.
+- **Semantic Scoring:** Content type prioritization. Headers and charts receive higher weight than body text or footers.
+- **Positioning Intelligence:** Automatic recognition of page elements (Header/Footer) based on vertical coordinates.
+- **Trajectory Optimizer (PLANNED):** Intelligent ROI sorting to minimize redundant camera travel.
+- **Adaptive Dynamics (PLANNED):** Dynamic adjustment of travel speeds and dwell times.
+- **Cinematic Smoothing (PLANNED):** Smooth camera trajectories (Splines) and movement inertia physics.
