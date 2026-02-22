@@ -30,7 +30,7 @@ input/video/
 input/images/
 
 # Project Management
-project_meta/
+project_meta/internal/
 *.log
 
 # Generated Scenarios

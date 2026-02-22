@@ -209,7 +209,8 @@ func (p *VideoProject) Run(ctx context.Context) error {
 					return
 				default:
 				}
-				img, err := p.Source.RenderPage(i, p.Config.DPI)
+				dpi := p.calculateOptimalDPI(i)
+				img, err := p.Source.RenderPage(i, dpi)
 				if err != nil {
 					log.Printf("[!] Error rendering page %d: %v", i, err)
 					continue
@@ -541,4 +542,50 @@ func (p *VideoProject) drawHollowRect(img *image.RGBA, r director.Rectangle, c c
 	draw.Draw(img, image.Rect(x, y, x+thickness, y+h), &image.Uniform{c}, image.Point{}, draw.Src)
 	// Right
 	draw.Draw(img, image.Rect(x+w-thickness, y, x+w, y+h), &image.Uniform{c}, image.Point{}, draw.Src)
+}
+func (p *VideoProject) calculateOptimalDPI(index int) int {
+	srcW, srcH, err := p.Source.GetPageDimensions(index)
+	if err != nil {
+		return p.Config.DPI
+	}
+
+	// Вычисляем необходимый DPI для целевого разрешения
+	// PDF points (1/72 inch).
+	// targetPixels = (sourcePoints / 72) * requiredDPI
+	// requiredDPI = (targetPixels * 72) / sourcePoints
+
+	targetW := float64(p.Config.Width)
+	targetH := float64(p.Config.Height)
+
+	// Учитываем, что страница может быть повернута или иметь другие пропорции.
+	// Берем максимум из требуемого DPI по ширине и высоте.
+	requiredDPI_W := (targetW * 72.0) / srcW
+	requiredDPI_H := (targetH * 72.0) / srcH
+
+	requiredDPI := requiredDPI_W
+	if requiredDPI_H > requiredDPI {
+		requiredDPI = requiredDPI_H
+	}
+
+	// Если есть зум, нам нужно больше пикселей для сохранения четкости.
+	// Учитываем максимальный зум в 2x (стандарт для Ken Burns в нашем проекте)
+	requiredDPI *= 1.5 // Коэффициент запаса для зума
+
+	// Ограничиваем диапазон: минимум 72 (экран), максимум 300 (типичный конфиг пользователя)
+	// но не больше, чем задал пользователь в конфиге, если он хочет меньше.
+	minDPI := 150.0
+	maxDPI := float64(p.Config.DPI)
+	if maxDPI < minDPI {
+		minDPI = maxDPI
+	}
+
+	result := int(math.Ceil(requiredDPI))
+	if float64(result) < minDPI {
+		return int(minDPI)
+	}
+	if float64(result) > maxDPI {
+		return int(maxDPI)
+	}
+
+	return result
 }
