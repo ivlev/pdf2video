@@ -139,3 +139,10 @@ Analyzes slides, detects key blocks, and creates a YAML scenario in `internal/sc
 - **Unit Testing:** 80%+ coverage for `internal/system`, `internal/video`, and `internal/engine`.
 - **Mocking Strategy:** Isolation of external dependencies (FFmpeg, Fitz) for deterministic testing.
 - **CI/CD:** Automatic quality control via GitHub Actions.
+
+## 17. Smart Directing 2.0 (Advanced Camera Logic)
+**PLANNED.**
+- **Content-Aware Analysis:** Evaluation of block importance via edge density and color variance.
+- **Path Optimization:** Intelligent sorting of ROIs to minimize unnecessary camera travel.
+- **Adaptive Dynamics:** Dynamic adjustment of travel speeds and dwell times based on content type.
+- **Cinematic Smoothing:** Smooth camera trajectories (Splines) and motion inertia physics.
