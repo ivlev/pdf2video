@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ivlev/pdf2video/internal/config"
+	"github.com/ivlev/pdf2video/internal/system"
 )
 
 type VideoEncoder interface {
@@ -111,7 +112,8 @@ func (e *FFmpegEncoder) writeRawRGBA(w io.Writer, img image.Image) error {
 	bounds := img.Bounds()
 	rgba, ok := img.(*image.RGBA)
 	if !ok || rgba.Stride != bounds.Dx()*4 || rgba.Rect.Min.X != 0 || rgba.Rect.Min.Y != 0 {
-		rgba = image.NewRGBA(bounds)
+		rgba = system.GetImage(bounds)
+		defer system.PutImage(rgba)
 		draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
 	}
 	_, err := w.Write(rgba.Pix)

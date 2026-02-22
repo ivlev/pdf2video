@@ -4,6 +4,7 @@
 *.swp
 *.swo
 *.code-workspace
+copilot*
 
 # OS files
 .DS_Store
