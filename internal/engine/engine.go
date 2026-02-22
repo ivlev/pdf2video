@@ -21,6 +21,7 @@ import (
 	"github.com/ivlev/pdf2video/internal/director"
 	"github.com/ivlev/pdf2video/internal/effects"
 	"github.com/ivlev/pdf2video/internal/source"
+	"github.com/ivlev/pdf2video/internal/system"
 	"github.com/ivlev/pdf2video/internal/video"
 )
 
@@ -262,11 +263,25 @@ func (p *VideoProject) Run(ctx context.Context) error {
 
 				if p.Config.Debug {
 					if se, ok := p.Effect.(*effects.ScenarioEffect); ok {
-						img = p.debugDrawScenario(img, se, i)
+						newImg := p.debugDrawScenario(img, se, i)
+						if newImg != img {
+							// Если мы создали новую копию для отладки,
+							// исходное изображение от рендерера больше не нужно.
+							if oldRgba, ok := img.(*image.RGBA); ok {
+								system.PutImage(oldRgba)
+							}
+							img = newImg
+						}
 					}
 				}
 
 				err := p.Encoder.EncodeSegment(p.ctx, img, segPath, params, p.Config.VideoEncoder, p.Config.Quality)
+
+				// Возвращаем буфер в пул после использования
+				if rgba, ok := img.(*image.RGBA); ok {
+					system.PutImage(rgba)
+				}
+
 				if err != nil {
 					log.Printf("[!] EncodeSegment error page %d: %v", i, err)
 					continue
@@ -449,6 +464,10 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 
 		// Поиск блоков на изображении
 		blocks, err := det.Detect(img)
+		if rgba, ok := img.(*image.RGBA); ok {
+			system.PutImage(rgba)
+		}
+
 		if err != nil {
 			log.Printf("[!] Ошибка анализа страницы %d: %v", i, err)
 			// Продолжаем с пустым списком блоков
@@ -513,9 +532,9 @@ func (p *VideoProject) debugDrawScenario(img image.Image, se *effects.ScenarioEf
 	}
 	slide := se.Scenario.Slides[pageIndex]
 
-	// Create a writable copy
+	// Create a writable copy from the buffer pool
 	bounds := img.Bounds()
-	rgba := image.NewRGBA(bounds)
+	rgba := system.GetImage(bounds)
 	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
 
 	// Draw rectangles for each keyframe

@@ -39,6 +39,7 @@ The application automatically selects the best available encoder:
 - **Encode Pool (GPU):** Encodes video segments using hardware acceleration.
 - **Zero-Disk I/O:** Images are transferred directly to FFmpeg via `stdin pipe` in `rawvideo` format.
 - **PDF Document Pooling:** Uses `sync.Pool` to reuse open PDF documents, eliminating redundant I/O during parallel rendering.
+- **Buffer Pooling:** Centralized pool for `image.RGBA` buffer reuse. Reduces Garbage Collector pressure and prevents memory fragmentation.
 - **Adaptive DPI:** Automatic calculation of the minimum required pixel density (DPI) for the target video resolution with a 50% margin for zoom. Reduces CPU load by 20-40%.
 
 ### 3.3. Smart Zoom & Scenario Rendering
