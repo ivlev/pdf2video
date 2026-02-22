@@ -33,6 +33,7 @@ type VideoProject struct {
 	tempDir string
 	ctx     context.Context
 	cancel  context.CancelFunc
+	cache   *system.RenderCache
 }
 
 func NewVideoProject(cfg *config.Config, src source.Source, ve video.VideoEncoder, eff effects.Effect) *VideoProject {
@@ -44,6 +45,7 @@ func NewVideoProject(cfg *config.Config, src source.Source, ve video.VideoEncode
 		Effect:  eff,
 		ctx:     ctx,
 		cancel:  cancel,
+		cache:   system.NewRenderCache("cache/renders"),
 	}
 }
 
@@ -211,7 +213,22 @@ func (p *VideoProject) Run(ctx context.Context) error {
 				default:
 				}
 				dpi := p.calculateOptimalDPI(i)
-				img, err := p.Source.RenderPage(i, dpi)
+
+				var img image.Image
+				var err error
+
+				// Пытаемся получить из кэша
+				cacheKey := p.cache.GetKey(p.Config.InputPath, i, dpi)
+				if cachedImg, found := p.cache.Get(cacheKey); found {
+					img = cachedImg
+				} else {
+					img, err = p.Source.RenderPage(i, dpi)
+					if err == nil {
+						// Сохраняем в кэш для будущих запусков
+						_ = p.cache.Put(cacheKey, img)
+					}
+				}
+
 				if err != nil {
 					log.Printf("[!] Error rendering page %d: %v", i, err)
 					continue
@@ -456,7 +473,21 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 		}
 		fmt.Printf("[*] Анализ страницы %d/%d...\n", i+1, pageCount)
 
-		img, err := p.Source.RenderPage(i, p.Config.DPI)
+		var img image.Image
+		var err error
+
+		// Для анализа используем DPI из конфига (или адаптивный, если захотим)
+		dpi := p.Config.DPI
+		cacheKey := p.cache.GetKey(p.Config.InputPath, i, dpi)
+		if cachedImg, found := p.cache.Get(cacheKey); found {
+			img = cachedImg
+		} else {
+			img, err = p.Source.RenderPage(i, dpi)
+			if err == nil {
+				_ = p.cache.Put(cacheKey, img)
+			}
+		}
+
 		if err != nil {
 			log.Printf("[!] Ошибка рендеринга страницы %d для анализа: %v", i, err)
 			continue

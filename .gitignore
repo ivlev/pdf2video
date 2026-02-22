@@ -52,3 +52,6 @@ generate_speed
 pipelined_app
 pdf2video_mod
 pdf2video_test
+
+# Cache
+cache/
