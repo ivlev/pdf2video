@@ -134,3 +134,8 @@ Uses high bitrate and DPI for crystal clear image.
 ./pdf2video -input presentation.pdf -generate-scenario
 ```
 Analyzes slides, detects key blocks, and creates a YAML scenario in `internal/scenarios/scenario_2026-02-13_01-42-26.yaml`.
+## 16. Quality Assurance & Reliability
+**PLANNED.**
+- **Unit Testing:** 80%+ coverage for `internal/system`, `internal/video`, and `internal/engine`.
+- **Mocking Strategy:** Isolation of external dependencies (FFmpeg, Fitz) for deterministic testing.
+- **CI/CD:** Automatic quality control via GitHub Actions.
