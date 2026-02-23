@@ -351,9 +351,65 @@ func (p *VideoProject) Run(ctx context.Context) error {
 		}
 	}
 
+	var finalSegments []config.VideoSegment
+	audioDelayMs := 0
+
+	if p.Config.BlackScreenDuration > 0 {
+		introPath := filepath.Join(p.tempDir, "intro_black.mp4")
+		introDur := p.Config.BlackScreenDuration + p.Config.FadeDuration
+		fmt.Printf("[*] Создание интро (черный экран, %.2fs)\n", introDur)
+		if err := p.generateBlackSegment(p.ctx, introDur, introPath); err != nil {
+			return fmt.Errorf("ошибка создания интро: %v", err)
+		}
+
+		finalSegments = append(finalSegments, config.VideoSegment{
+			Path:           introPath,
+			Duration:       introDur,
+			TransitionType: "none",
+			FadeDuration:   0,
+		})
+
+		audioDelayMs = int(p.Config.BlackScreenDuration * 1000)
+	}
+
+	for i, r := range results {
+		transType := p.Config.TransitionType
+		fadeDur := p.Config.FadeDuration
+
+		if i == 0 && p.Config.BlackScreenDuration > 0 {
+			transType = p.Config.BlackScreenTransition
+		} else if i == 0 {
+			transType = "none"
+			fadeDur = 0
+		}
+
+		finalSegments = append(finalSegments, config.VideoSegment{
+			Path:           r,
+			Duration:       p.Config.PageDurations[i],
+			TransitionType: transType,
+			FadeDuration:   fadeDur,
+		})
+	}
+
+	if p.Config.BlackScreenDuration > 0 {
+		outroPath := filepath.Join(p.tempDir, "outro_black.mp4")
+		outroDur := p.Config.BlackScreenDuration + p.Config.FadeDuration
+		fmt.Printf("[*] Создание аутро (черный экран, %.2fs)\n", outroDur)
+		if err := p.generateBlackSegment(p.ctx, outroDur, outroPath); err != nil {
+			return fmt.Errorf("ошибка создания аутро: %v", err)
+		}
+
+		finalSegments = append(finalSegments, config.VideoSegment{
+			Path:           outroPath,
+			Duration:       outroDur,
+			TransitionType: p.Config.BlackScreenTransition,
+			FadeDuration:   p.Config.FadeDuration,
+		})
+	}
+
 	fmt.Println("[*] Сборка финального видео (с эффектами переходов)...")
 	concatStart = time.Now()
-	err = p.Encoder.Concatenate(p.ctx, results, p.Config.OutputVideo, p.tempDir, *p.Config)
+	err = p.Encoder.Concatenate(p.ctx, finalSegments, p.Config.OutputVideo, p.tempDir, *p.Config, audioDelayMs)
 	if err != nil {
 		select {
 		case <-p.ctx.Done():
@@ -410,6 +466,32 @@ func (p *VideoProject) Run(ctx context.Context) error {
 type RenderResult struct {
 	Index int
 	Image image.Image
+}
+
+func (p *VideoProject) generateBlackSegment(ctx context.Context, duration float64, outputPath string) error {
+	img := system.GetImage(image.Rect(0, 0, p.Config.Width, p.Config.Height))
+	defer system.PutImage(img)
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.Black}, image.Point{}, draw.Src)
+
+	// Для простого черного фона (raw image -> encoder) не нужно использовать zoompan, если мы
+	// передаем один кадр в ffmpeg? А нет, EncodeSegment генерирует видео из 1 raw-кадра:
+	// -t duration и -filter_script. Мы можем использовать базовый null-фильтр или просто
+	// простую копию. Но `zoompan` тоже подойдет, чтобы кадр клонировался до нужной длины.
+	filter := fmt.Sprintf("zoompan=z=1.0:x=0:y=0:d=%d:s=%dx%d:fps=%d", int(duration*float64(p.Config.FPS)), p.Config.Width, p.Config.Height, p.Config.FPS)
+
+	params := config.SegmentParams{
+		Width:         p.Config.Width,
+		Height:        p.Config.Height,
+		FPS:           p.Config.FPS,
+		Duration:      duration,
+		ZoomMode:      "center",
+		ZoomSpeed:     0,
+		FadeDuration:  0,
+		OutroDuration: 0,
+		Filter:        filter,
+	}
+
+	return p.Encoder.EncodeSegment(ctx, img, outputPath, params, p.Config.VideoEncoder, p.Config.Quality)
 }
 
 func (p *VideoProject) calculateDurations(pageCount int) {

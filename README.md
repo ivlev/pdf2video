@@ -82,6 +82,8 @@ pdf2video — это высокопроизводительная CLI-утили
 | `-duration` | Общая длительность видео (сек) | 0 (авто по аудио) |
 | `-page-duration` | **Средняя** длительность слайда (вариация ±15%) | 0.3 |
 | `-audio` | Путь к аудио-файлу | последняя в `input/audio/` |
+| `-black-screen-duration`| Длительность черного экрана в начале и в конце (сек) | `2.0` |
+| `-black-screen-transition`| Переход для черного экрана (none для отключения)| как в `-transition`|
 | `-zoom-mode` | Тип движения для DefaultEffect | `center` |
 | `-zoom-speed` | Скорость зума для DefaultEffect | `0.001` |
 | `-transition` | Тип перехода (`fade`, `wipeleft`, `slideup`, `pixelize`) | `fade` |

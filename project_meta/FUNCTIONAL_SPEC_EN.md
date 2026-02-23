@@ -88,6 +88,8 @@ The application automatically selects the best available encoder:
 | `-transition` | Transition type (`fade`, `wipeleft`...) | `fade` |
 | `-fade` | Transition effect duration (sec) | `0.5` |
 | `-outro-duration` | Time to return to 1:1 before transition | `1.0` |
+| `-black-screen-duration` | Black screen duration (intro/outro) | `2.0` |
+| `-black-screen-transition`| Transition type for black screen | same as `-transition` |
 | `-bg-audio` | Path to background track | auto |
 | `-bg-volume` | Background track volume (0.0 - 1.0) | `0.3` |
 

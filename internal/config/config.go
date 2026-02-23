@@ -3,40 +3,49 @@ package config
 import "fmt"
 
 type Config struct {
-	InputPath           string
-	OutputVideo         string
-	TotalDuration       float64
-	Width               int
-	Height              int
-	FPS                 int
-	Workers             int
-	FadeDuration        float64
-	TransitionType      string
-	ZoomMode            string
-	ZoomSpeed           float64
-	DPI                 int
-	AudioPath           string
-	Preset              string
-	PageDurations       []float64
-	VideoEncoder        string
-	Quality             int
-	ShowStats           bool
-	BuildVersion        string
-	AnalyzeMode         string
-	MinBlockArea        int
-	EdgeThreshold       float64
-	GenerateScenario    bool
-	ScenarioOutput      string
-	ScenarioInput       string
-	OutroDuration       float64
-	BackgroundAudio     string
-	BackgroundVolume    float64
-	Debug               bool
-	MaxMemoryMB         int
-	EdgeWeight          float64
-	ColorVarianceWeight float64
-	PositionWeight      float64
-	SizeWeight          float64
+	InputPath             string
+	OutputVideo           string
+	TotalDuration         float64
+	Width                 int
+	Height                int
+	FPS                   int
+	Workers               int
+	FadeDuration          float64
+	TransitionType        string
+	ZoomMode              string
+	ZoomSpeed             float64
+	DPI                   int
+	AudioPath             string
+	Preset                string
+	PageDurations         []float64
+	VideoEncoder          string
+	Quality               int
+	ShowStats             bool
+	BuildVersion          string
+	AnalyzeMode           string
+	MinBlockArea          int
+	EdgeThreshold         float64
+	GenerateScenario      bool
+	ScenarioOutput        string
+	ScenarioInput         string
+	OutroDuration         float64
+	BackgroundAudio       string
+	BackgroundVolume      float64
+	Debug                 bool
+	MaxMemoryMB           int
+	EdgeWeight            float64
+	ColorVarianceWeight   float64
+	PositionWeight        float64
+	SizeWeight            float64
+	BlackScreenDuration   float64
+	BlackScreenTransition string
+}
+
+type VideoSegment struct {
+	Path           string
+	Duration       float64
+	TransitionType string
+	FadeDuration   float64
 }
 
 type SegmentParams struct {
