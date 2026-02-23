@@ -54,7 +54,7 @@
 
 1.  [x] **Enhanced Detector**: Глубокий анализ контента (Edge Density, Color Variance).
 2.  [x] **Semantic Scorer**: Оценка информативности блоков.
-3.  [ ] **Trajectory Optimizer**: Умная сортировка порядка посещения блоков (Nearest Neighbor).
+3.  [x] **Trajectory Optimizer**: Умная сортировка порядка посещения блоков (баланс важности и расстояния).
 4.  [ ] **Adaptive Dwell Time**: Динамическое время задержки на основе значимости блока.
 5.  [ ] **Path Smoothing**: Сглаживание траекторий полета камеры (Splines/Inertia).
 

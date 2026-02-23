@@ -1,7 +1,7 @@
 # pdf2video Functional Specification
 
-**Version:** 0.9.0 (Modular Encoding & Graceful Shutdown)
-**Date:** 2026-02-18
+**Version:** 0.91 (Smart Directing 2.0: Scorer & Optimizer)
+**Date:** 2026-02-23
 
 ## 1. Product Overview
 `pdf2video` is a high-performance CLI utility for automatically creating dynamic video presentations from static PDF files or image sets. The program transforms static slides into cinematic video sequences with precise camera control via YAML scenarios, audio synchronization, and hardware acceleration.
@@ -45,9 +45,9 @@ The application automatically selects the best available encoder:
 - **Adaptive DPI:** Automatic calculation of the minimum required pixel density (DPI) for the target video resolution with a 50% margin for zoom. Reduces CPU load by 20-40%.
 
 ### 3.3. Smart Zoom & Scenario Rendering
-- **Analyze:** ROI detection (headers, text) via `EnhancedDetector` (previously `ContrastDetector`).
-- **Score:** Semantic ranking of blocks via `BlockPrioritizer` based on content type and position.
-- **Plan:** Automatic YAML scenario generation.
+- **Analyze:** ROI detection (headers, text) via `EnhancedDetector` evaluating edge density and color variance.
+- **Score:** Semantic ranking of blocks via `SemanticScorer` based on content type (headers, charts) and vertical position.
+- **Plan:** Generation of an optimized camera trajectory via `TrajectoryOptimizer`, balancing block importance and travel distance to avoid erratic jumps.
 - **Scale:** Scenario timings are automatically scaled to match the total audio duration.
 - **Render:** `ScenarioEffect` transforms YAML keyframes into complex piecewise `zoompan` expressions.
 
@@ -142,10 +142,11 @@ Analyzes slides, detects key blocks, and creates a YAML scenario in `internal/sc
 - **CI/CD:** Automatic quality control via GitHub Actions.
 
 ## 17. Smart Directing 2.0 (Advanced Camera Logic)
-**IN PROGRESS (Beta)**
+**ACTIVE PHASE:**
 - **Content-Aware Analysis:** Evaluation of block importance via Edge Density and Color Variance. Helps differentiate between text and graphics.
-- **Semantic Scoring:** Content type prioritization. Headers and charts receive higher weight than body text or footers.
-- **Positioning Intelligence:** Automatic recognition of page elements (Header/Footer) based on vertical coordinates.
-- **Trajectory Optimizer (PLANNED):** Intelligent ROI sorting to minimize redundant camera travel.
-- **Adaptive Dynamics (PLANNED):** Dynamic adjustment of travel speeds and dwell times.
+- **Semantic Scoring:** Content type prioritization. Headers and charts receive higher weight (up to 1.0) than body text or footers.
+- **Trajectory Optimizer:** Intelligent ROI sorting using a greedy algorithm that combines block importance (Priority) and physical proximity (Distance Weight) to minimize redundant camera travel and prevent erratic jumps.
+
+**PLANNED:**
+- **Adaptive Dwell Time (PLANNED):** Dynamic adjustment of travel speeds and dwell times based on block significance.
 - **Cinematic Smoothing (PLANNED):** Smooth camera trajectories (Splines) and movement inertia physics.
