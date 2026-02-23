@@ -57,6 +57,8 @@ func main() {
 	bgAudioPtr := flag.String("bg-audio", "", "Путь к фоновому аудио (по умолчанию: самый свежий файл в input/background/)")
 	bgVolumePtr := flag.Float64("bg-volume", 0.3, "Громкость фонового аудио (0.0 - 1.0, по умолчанию 0.3)")
 	debugPtr := flag.Bool("debug", false, "Режим отладки: показывать рамки отслеживания камеры")
+	blackScreenDurPtr := flag.Float64("black-screen-duration", 2.0, "Длительность черного экрана в начале и в конце видео (сек)")
+	blackScreenTransPtr := flag.String("black-screen-transition", "", "Переход для черного экрана (по умолчанию совпадает с -transition)")
 
 	flag.Parse()
 
@@ -185,35 +187,42 @@ func main() {
 		}
 	}
 
+	blackScreenTrans := *blackScreenTransPtr
+	if blackScreenTrans == "" {
+		blackScreenTrans = *transitionPtr
+	}
+
 	cfg := &config.Config{
-		InputPath:        inputPath,
-		OutputVideo:      finalOutput,
-		TotalDuration:    totalDuration,
-		Width:            width,
-		Height:           height,
-		FPS:              *fpsPtr,
-		Workers:          *workersPtr,
-		FadeDuration:     *fadePtr,
-		TransitionType:   *transitionPtr,
-		ZoomMode:         *zoomPtr,
-		ZoomSpeed:        *zoomSpeedPtr,
-		DPI:              *dpiPtr,
-		AudioPath:        audioPath,
-		Preset:           *presetPtr,
-		VideoEncoder:     encoderName,
-		Quality:          quality,
-		ShowStats:        *statsPtr,
-		BuildVersion:     buildVersion,
-		AnalyzeMode:      *analyzeModePtr,
-		MinBlockArea:     *minBlockAreaPtr,
-		EdgeThreshold:    *edgeThresholdPtr,
-		GenerateScenario: *generateScenarioPtr,
-		ScenarioOutput:   *scenarioOutputPtr,
-		ScenarioInput:    *scenarioInputPtr,
-		OutroDuration:    *outroDurationPtr,
-		BackgroundAudio:  bgAudioPath,
-		BackgroundVolume: *bgVolumePtr,
-		Debug:            *debugPtr,
+		InputPath:             inputPath,
+		OutputVideo:           finalOutput,
+		TotalDuration:         totalDuration,
+		Width:                 width,
+		Height:                height,
+		FPS:                   *fpsPtr,
+		Workers:               *workersPtr,
+		FadeDuration:          *fadePtr,
+		TransitionType:        *transitionPtr,
+		ZoomMode:              *zoomPtr,
+		ZoomSpeed:             *zoomSpeedPtr,
+		DPI:                   *dpiPtr,
+		AudioPath:             audioPath,
+		Preset:                *presetPtr,
+		VideoEncoder:          encoderName,
+		Quality:               quality,
+		ShowStats:             *statsPtr,
+		BuildVersion:          buildVersion,
+		AnalyzeMode:           *analyzeModePtr,
+		MinBlockArea:          *minBlockAreaPtr,
+		EdgeThreshold:         *edgeThresholdPtr,
+		GenerateScenario:      *generateScenarioPtr,
+		ScenarioOutput:        *scenarioOutputPtr,
+		ScenarioInput:         *scenarioInputPtr,
+		OutroDuration:         *outroDurationPtr,
+		BackgroundAudio:       bgAudioPath,
+		BackgroundVolume:      *bgVolumePtr,
+		Debug:                 *debugPtr,
+		BlackScreenDuration:   *blackScreenDurPtr,
+		BlackScreenTransition: blackScreenTrans,
 	}
 
 	// Валидация конфигурации перед началом работы
