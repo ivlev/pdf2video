@@ -59,6 +59,7 @@ func main() {
 	debugPtr := flag.Bool("debug", false, "Режим отладки: показывать рамки отслеживания камеры")
 	blackScreenDurPtr := flag.Float64("black-screen-duration", 2.0, "Длительность черного экрана в начале и в конце видео (сек)")
 	blackScreenTransPtr := flag.String("black-screen-transition", "", "Переход для черного экрана (по умолчанию совпадает с -transition)")
+	tracePtr := flag.Bool("trace", false, "Режим трассировки: показывать направление движения камеры и точки остановок")
 
 	flag.Parse()
 
@@ -223,6 +224,7 @@ func main() {
 		Debug:                 *debugPtr,
 		BlackScreenDuration:   *blackScreenDurPtr,
 		BlackScreenTransition: blackScreenTrans,
+		Trace:                 *tracePtr,
 	}
 
 	// Валидация конфигурации перед началом работы

@@ -100,6 +100,7 @@ The application automatically selects the best available encoder:
 | `-quality` | Quality (CRF for x264, Bitrate for GPU) | `auto` (x264: 23, VT: 75) |
 | `-stats` | Output performance metrics | `false` |
 | `-debug` | Debug mode: draw camera paths and stats | `false` |
+| `-trace` | Trace mode: draw camera movement direction and stop points | `false` |
 | `-workers` | Number of render threads | All CPU cores |
 
 ### Smart Zoom (Analysis & Scenarios)
