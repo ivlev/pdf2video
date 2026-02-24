@@ -1,4 +1,4 @@
-# PDF2Video: Cinematic Video Generator (v0.91)
+# PDF2Video: Cinematic Video Generator (v0.91) Mac OS/Linux
 
 Превратите статические PDF и изображения в динамичный видеоряд.
 
