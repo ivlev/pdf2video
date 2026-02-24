@@ -39,6 +39,7 @@ type Config struct {
 	SizeWeight            float64
 	BlackScreenDuration   float64
 	BlackScreenTransition string
+	Trace                 bool
 }
 
 type VideoSegment struct {
@@ -59,6 +60,7 @@ type SegmentParams struct {
 	PageIndex     int
 	Filter        string
 	Debug         bool
+	Trace         bool
 }
 
 var SupportedTransitions = []string{

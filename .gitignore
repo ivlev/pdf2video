@@ -32,6 +32,8 @@ input/images/
 
 # Project Management
 project_meta/internal/
+project_meta/CURRENT_PRIORITIES.md
+project_meta/TITLES_IMPLEMENTATION_PLAN.md
 *.log
 
 # Generated Scenarios
@@ -52,6 +54,7 @@ generate_speed
 pipelined_app
 pdf2video_mod
 pdf2video_test
+scenario
 
 # Cache
 cache/

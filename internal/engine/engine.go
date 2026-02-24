@@ -283,13 +283,14 @@ func (p *VideoProject) Run(ctx context.Context) error {
 					OutroDuration: p.Config.OutroDuration,
 					PageIndex:     i,
 					Debug:         p.Config.Debug,
+					Trace:         p.Config.Trace,
 				}
 
 				params.Filter = p.Effect.GenerateFilter(params)
 
-				if p.Config.Debug {
+				if p.Config.Debug || p.Config.Trace {
 					if se, ok := p.Effect.(*effects.ScenarioEffect); ok {
-						newImg := p.debugDrawScenario(img, se, i)
+						newImg := p.debugDrawScenario(img, se, i, p.Config.Debug, p.Config.Trace)
 						if newImg != img {
 							// Если мы создали новую копию для отладки,
 							// исходное изображение от рендерера больше не нужно.
@@ -657,7 +658,7 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 	return nil
 }
 
-func (p *VideoProject) debugDrawScenario(img image.Image, se *effects.ScenarioEffect, pageIndex int) image.Image {
+func (p *VideoProject) debugDrawScenario(img image.Image, se *effects.ScenarioEffect, pageIndex int, drawDebug, drawTrace bool) image.Image {
 	if pageIndex >= len(se.Scenario.Slides) {
 		return img
 	}
@@ -670,11 +671,106 @@ func (p *VideoProject) debugDrawScenario(img image.Image, se *effects.ScenarioEf
 
 	// Draw rectangles for each keyframe
 	red := color.RGBA{255, 0, 0, 255}
-	for _, kf := range slide.Keyframes {
-		p.drawHollowRect(rgba, kf.Rect, red)
+	if drawDebug {
+		for _, kf := range slide.Keyframes {
+			p.drawHollowRect(rgba, kf.Rect, red)
+		}
+	}
+
+	if drawTrace {
+		p.drawTracePath(rgba, slide.Keyframes)
 	}
 
 	return rgba
+}
+
+func (p *VideoProject) drawTracePath(img *image.RGBA, keyframes []director.Keyframe) {
+	if len(keyframes) < 2 {
+		return
+	}
+
+	traceColor := color.RGBA{0, 255, 0, 255} // Green for trace path
+	dotColor := color.RGBA{0, 0, 255, 255}   // Blue for stop points
+	dotRadius := 8
+
+	// Draw lines between centers of keyframes
+	for i := 0; i < len(keyframes)-1; i++ {
+		start := p.getCenter(keyframes[i])
+		end := p.getCenter(keyframes[i+1])
+		p.drawLine(img, start, end, traceColor, 3)
+	}
+
+	// Draw dots for each stop point (keyframe center)
+	for _, kf := range keyframes {
+		p.drawCircle(img, p.getCenter(kf), dotRadius, dotColor)
+	}
+}
+
+func (p *VideoProject) getCenter(kf director.Keyframe) image.Point {
+	return image.Point{
+		X: int(kf.Rect.X + kf.Rect.W/2),
+		Y: int(kf.Rect.Y + kf.Rect.H/2),
+	}
+}
+
+// Simple Bresenham line drawing
+func (p *VideoProject) drawLine(img *image.RGBA, start, end image.Point, c color.Color, thickness int) {
+	x0, y0 := start.X, start.Y
+	x1, y1 := end.X, end.Y
+
+	dx := x1 - x0
+	if dx < 0 {
+		dx = -dx
+	}
+	dy := y1 - y0
+	if dy < 0 {
+		dy = -dy
+	}
+
+	sx, sy := 1, 1
+	if x0 >= x1 {
+		sx = -1
+	}
+	if y0 >= y1 {
+		sy = -1
+	}
+
+	err := dx - dy
+
+	for {
+		// Draw thick point
+		for i := -thickness / 2; i <= thickness/2; i++ {
+			for j := -thickness / 2; j <= thickness/2; j++ {
+				img.Set(x0+i, y0+j, c)
+			}
+		}
+
+		if x0 == x1 && y0 == y1 {
+			break
+		}
+
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
+			x0 += sx
+		}
+		if e2 < dx {
+			err += dx
+			y0 += sy
+		}
+	}
+}
+
+// Simple circle drawing (filled)
+func (p *VideoProject) drawCircle(img *image.RGBA, center image.Point, radius int, c color.Color) {
+	cx, cy := center.X, center.Y
+	for y := -radius; y <= radius; y++ {
+		for x := -radius; x <= radius; x++ {
+			if x*x+y*y <= radius*radius {
+				img.Set(cx+x, cy+y, c)
+			}
+		}
+	}
 }
 
 func (p *VideoProject) drawHollowRect(img *image.RGBA, r director.Rectangle, c color.Color) {
