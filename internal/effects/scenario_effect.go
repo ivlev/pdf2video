@@ -127,3 +127,10 @@ func (e *ScenarioEffect) GenerateFilter(p config.SegmentParams) string {
 
 	return strings.Join(filters, ",")
 }
+
+func (e *ScenarioEffect) GenerateKeyframes(p config.SegmentParams) []director.Keyframe {
+	if e.Scenario == nil || p.PageIndex >= len(e.Scenario.Slides) {
+		return []director.Keyframe{}
+	}
+	return e.Scenario.Slides[p.PageIndex].Keyframes
+}

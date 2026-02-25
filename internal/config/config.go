@@ -40,6 +40,7 @@ type Config struct {
 	BlackScreenDuration   float64
 	BlackScreenTransition string
 	Trace                 bool
+	TraceColor            string
 }
 
 type VideoSegment struct {
@@ -61,6 +62,7 @@ type SegmentParams struct {
 	Filter        string
 	Debug         bool
 	Trace         bool
+	TraceColor    string
 }
 
 var SupportedTransitions = []string{

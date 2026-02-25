@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/ivlev/pdf2video/internal/config"
+	"github.com/ivlev/pdf2video/internal/director"
 	"github.com/ivlev/pdf2video/internal/system"
 )
 
 type Effect interface {
 	GenerateFilter(params config.SegmentParams) string
+	GenerateKeyframes(params config.SegmentParams) []director.Keyframe
 }
 
 type DefaultEffect struct{}
@@ -88,4 +90,71 @@ func (e *DefaultEffect) GenerateFilter(p config.SegmentParams) string {
 	}
 
 	return fmt.Sprintf("%s,%s,scale=%d:%d", aspectFilter, zoomFilter, p.Width, p.Height)
+}
+
+func (e *DefaultEffect) GenerateKeyframes(p config.SegmentParams) []director.Keyframe {
+	mode := strings.ToLower(p.ZoomMode)
+	if mode == "random" || mode == "out-random" {
+		modes := []string{"center", "top-left", "top-right", "bottom-left", "bottom-right"}
+		r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(p.PageIndex*99)))
+		mode = modes[r.Intn(len(modes))]
+	}
+
+	fFPS := float64(p.FPS)
+	fTotal := p.Duration * fFPS
+	fFade := p.FadeDuration * fFPS
+	fActive := fTotal - fFade
+	if fActive <= 0 {
+		fActive = fTotal
+	}
+
+	zSpeed := p.ZoomSpeed
+	if zSpeed <= 0 {
+		zSpeed = 0.001
+	}
+
+	onPeak := 0.5 / zSpeed
+	if onPeak > (fActive-p.OutroDuration*fFPS)/2 && (fActive-p.OutroDuration*fFPS) > 0 {
+		onPeak = (fActive - p.OutroDuration*fFPS) / 2
+	}
+
+	actualPeak := 1.0 + (zSpeed * onPeak)
+	if actualPeak > 1.5 {
+		actualPeak = 1.5
+		onPeak = 0.5 / zSpeed
+	}
+
+	outroStart := fActive - p.OutroDuration*fFPS
+	if outroStart < onPeak {
+		outroStart = onPeak
+	}
+
+	// We create fake rects simulating the view center coordinate
+	var endX, endY float64
+	w, h := float64(p.Width), float64(p.Height)
+
+	switch mode {
+	case "top-left":
+		endX, endY = 0, 0
+	case "top-right":
+		endX, endY = w-(w/actualPeak), 0
+	case "bottom-left":
+		endX, endY = 0, h-(h/actualPeak)
+	case "bottom-right":
+		endX, endY = w-(w/actualPeak), h-(h/actualPeak)
+	default: // center
+		endX, endY = w/2-(w/actualPeak/2), h/2-(h/actualPeak/2)
+	}
+
+	// Center point is the view top-left + half view width
+	cenX := func(x, z float64) int { return int(x + (w/z)/2) }
+	cenY := func(y, z float64) int { return int(y + (h/z)/2) }
+
+	frames := []director.Keyframe{
+		{Time: 0, Focus: "start", Zoom: 1.0, Rect: director.Rectangle{X: cenX(0, 1.0) - int(w)/2, Y: cenY(0, 1.0) - int(h)/2, W: p.Width, H: p.Height}},
+		{Time: onPeak / fFPS, Focus: "peak", Zoom: actualPeak, Rect: director.Rectangle{X: cenX(endX, actualPeak) - int(w/actualPeak)/2, Y: cenY(endY, actualPeak) - int(h/actualPeak)/2, W: int(w / actualPeak), H: int(h / actualPeak)}},
+		{Time: outroStart / fFPS, Focus: "hold_end", Zoom: actualPeak, Rect: director.Rectangle{X: cenX(endX, actualPeak) - int(w/actualPeak)/2, Y: cenY(endY, actualPeak) - int(h/actualPeak)/2, W: int(w / actualPeak), H: int(h / actualPeak)}},
+		{Time: fActive / fFPS, Focus: "outro_end", Zoom: 1.0, Rect: director.Rectangle{X: cenX(0, 1.0) - int(w)/2, Y: cenY(0, 1.0) - int(h)/2, W: p.Width, H: p.Height}},
+	}
+	return frames
 }

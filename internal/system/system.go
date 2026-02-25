@@ -2,6 +2,7 @@ package system
 
 import (
 	"fmt"
+	"image/color"
 	"log"
 	"os"
 	"os/exec"
@@ -213,4 +214,14 @@ func CheckFilterSupport(filterName string) bool {
 	supported := strings.Contains(string(out), filterName)
 	supportedFiltersCache[filterName] = supported
 	return supported
+}
+
+func ParseHexColor(s string) (color.RGBA, error) {
+	c := color.RGBA{A: 255}
+	s = strings.TrimPrefix(s, "#")
+	if len(s) == 6 {
+		_, err := fmt.Sscanf(s, "%02x%02x%02x", &c.R, &c.G, &c.B)
+		return c, err
+	}
+	return color.RGBA{}, fmt.Errorf("invalid color format, expected hex #RRGGBB")
 }
