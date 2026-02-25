@@ -60,6 +60,7 @@ func main() {
 	blackScreenDurPtr := flag.Float64("black-screen-duration", 2.0, "Длительность черного экрана в начале и в конце видео (сек)")
 	blackScreenTransPtr := flag.String("black-screen-transition", "", "Переход для черного экрана (по умолчанию совпадает с -transition)")
 	tracePtr := flag.Bool("trace", false, "Режим трассировки: показывать направление движения камеры и точки остановок")
+	traceColorPtr := flag.String("trace-color", "#FFFFFF", "Цвет текста координат в режиме трассировки (HEX: #FFFFFF, #00FF00)")
 
 	flag.Parse()
 
@@ -225,6 +226,7 @@ func main() {
 		BlackScreenDuration:   *blackScreenDurPtr,
 		BlackScreenTransition: blackScreenTrans,
 		Trace:                 *tracePtr,
+		TraceColor:            *traceColorPtr,
 	}
 
 	// Валидация конфигурации перед началом работы

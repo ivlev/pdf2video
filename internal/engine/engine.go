@@ -23,6 +23,9 @@ import (
 	"github.com/ivlev/pdf2video/internal/source"
 	"github.com/ivlev/pdf2video/internal/system"
 	"github.com/ivlev/pdf2video/internal/video"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 )
 
 type VideoProject struct {
@@ -256,6 +259,13 @@ func (p *VideoProject) Run(ctx context.Context) error {
 		numEncodeWorkers = pageCount
 	}
 
+	// Trace scenario collection
+	traceScenario := &director.Scenario{
+		Version: "1.0-trace",
+		Slides:  make([]director.Slide, pageCount),
+	}
+	var traceMu sync.Mutex
+
 	for w := 0; w < numEncodeWorkers; w++ {
 		wgEncode.Add(1)
 		go func() {
@@ -284,16 +294,44 @@ func (p *VideoProject) Run(ctx context.Context) error {
 					PageIndex:     i,
 					Debug:         p.Config.Debug,
 					Trace:         p.Config.Trace,
+					TraceColor:    p.Config.TraceColor,
 				}
 
 				params.Filter = p.Effect.GenerateFilter(params)
 
 				if p.Config.Debug || p.Config.Trace {
+					// Collecting keyframes for trace log
+					keyframes := p.Effect.GenerateKeyframes(params)
+
+					// Save the trace data
+					traceMu.Lock()
+					traceScenario.Slides[i] = director.Slide{
+						ID:        i + 1,
+						Duration:  duration,
+						Keyframes: keyframes,
+					}
+					traceMu.Unlock()
+
+					// If it's a ScenarioEffect, we just use its scenario. If Default, we create fake ones.
+					// We'll collect the generated keyframes in a thread-safe way?
+					// NO: Effect processing is pure here, but let's just do it directly on img copy.
 					if se, ok := p.Effect.(*effects.ScenarioEffect); ok {
 						newImg := p.debugDrawScenario(img, se, i, p.Config.Debug, p.Config.Trace)
 						if newImg != img {
-							// Если мы создали новую копию для отладки,
-							// исходное изображение от рендерера больше не нужно.
+							if oldRgba, ok := img.(*image.RGBA); ok {
+								system.PutImage(oldRgba)
+							}
+							img = newImg
+						}
+					} else if len(keyframes) > 0 {
+						// For DefaultEffect, build a temporary ScenarioEffect to draw the trace map
+						tempScen := &director.Scenario{
+							Slides: []director.Slide{{Keyframes: keyframes}},
+						}
+						tempSE := effects.NewScenarioEffect(tempScen)
+						// Notice index is 0 because we just passed a 1-slide scenario
+						newImg := p.debugDrawScenario(img, tempSE, 0, p.Config.Debug, p.Config.Trace)
+						if newImg != img {
 							if oldRgba, ok := img.(*image.RGBA); ok {
 								system.PutImage(oldRgba)
 							}
@@ -337,6 +375,18 @@ func (p *VideoProject) Run(ctx context.Context) error {
 	encodeStart = renderStart // Encode по факту стартует почти сразу с Render
 	wgEncode.Wait()
 	encodeEnd = time.Now()
+
+	// Сохранение лога трассировки камеры, если включен Debug или Trace
+	if p.Config.Debug || p.Config.Trace {
+		timestamp := time.Now().Format("2006-01-02_15-04-05")
+		tracePath := filepath.Join("internal/scenarios", fmt.Sprintf("trace_%s.yaml", timestamp))
+		os.MkdirAll(filepath.Dir(tracePath), 0755)
+		if err := director.WriteScenario(traceScenario, tracePath); err == nil {
+			fmt.Printf("[*] Лог трассировки камеры сохранен: %s\n", tracePath)
+		} else {
+			fmt.Printf("[!] Ошибка сохранения лога трассировки: %v\n", err)
+		}
+	}
 
 	// Проверяем, был ли процесс прерван
 	select {
@@ -678,19 +728,23 @@ func (p *VideoProject) debugDrawScenario(img image.Image, se *effects.ScenarioEf
 	}
 
 	if drawTrace {
-		p.drawTracePath(rgba, slide.Keyframes)
+		p.drawTracePath(rgba, slide.Keyframes, p.Config.TraceColor)
 	}
 
 	return rgba
 }
 
-func (p *VideoProject) drawTracePath(img *image.RGBA, keyframes []director.Keyframe) {
+func (p *VideoProject) drawTracePath(img *image.RGBA, keyframes []director.Keyframe, traceColorStr string) {
 	if len(keyframes) < 2 {
 		return
 	}
 
 	traceColor := color.RGBA{0, 255, 0, 255} // Green for trace path
 	dotColor := color.RGBA{0, 0, 255, 255}   // Blue for stop points
+	textColor, err := system.ParseHexColor(traceColorStr)
+	if err != nil {
+		textColor = color.RGBA{255, 255, 255, 255} // Fallback to White
+	}
 	dotRadius := 8
 
 	// Draw lines between centers of keyframes
@@ -700,9 +754,25 @@ func (p *VideoProject) drawTracePath(img *image.RGBA, keyframes []director.Keyfr
 		p.drawLine(img, start, end, traceColor, 3)
 	}
 
+	// Prepare font drawer
+	d := &font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(textColor),
+		Face: basicfont.Face7x13,
+	}
+
 	// Draw dots for each stop point (keyframe center)
 	for _, kf := range keyframes {
-		p.drawCircle(img, p.getCenter(kf), dotRadius, dotColor)
+		center := p.getCenter(kf)
+		p.drawCircle(img, center, dotRadius, dotColor)
+
+		// Draw coordinates near the dot
+		label := fmt.Sprintf("(%d, %d)", center.X, center.Y)
+		d.Dot = fixed.Point26_6{
+			X: fixed.I(center.X + 10),
+			Y: fixed.I(center.Y - 10),
+		}
+		d.DrawString(label)
 	}
 }
 

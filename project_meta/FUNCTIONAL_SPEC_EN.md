@@ -101,6 +101,7 @@ The application automatically selects the best available encoder:
 | `-stats` | Output performance metrics | `false` |
 | `-debug` | Debug mode: draw camera paths and stats | `false` |
 | `-trace` | Trace mode: draw camera movement direction and stop points | `false` |
+| `-trace-color` | Color of coordinate text in trace mode (HEX) | `#FFFFFF` |
 | `-workers` | Number of render threads | All CPU cores |
 
 ### Smart Zoom (Analysis & Scenarios)
