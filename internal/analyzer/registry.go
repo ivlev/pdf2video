@@ -12,7 +12,7 @@ func NewDetector(variant string) (Detector, error) {
 	case "contrast":
 		return NewContrastDetector(), nil
 	case "ocr":
-		return nil, fmt.Errorf("ocr detector not yet implemented")
+		return NewOCRDetector(nil, 0), nil
 	case "ai":
 		return nil, fmt.Errorf("ai detector not yet implemented")
 	default:

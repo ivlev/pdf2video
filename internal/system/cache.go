@@ -23,15 +23,9 @@ func NewRenderCache(dir string) *RenderCache {
 	return &RenderCache{Dir: dir}
 }
 
-// GetKey генерирует уникальный ключ для страницы на основе пути, времени изменения, индекса и DPI.
-func (c *RenderCache) GetKey(path string, pageIndex int, dpi int) string {
-	info, err := os.Stat(path)
-	modTime := ""
-	if err == nil {
-		modTime = info.ModTime().String()
-	}
-
-	data := fmt.Sprintf("%s|%s|%d|%d", path, modTime, pageIndex, dpi)
+// GetKey генерирует уникальный ключ для страницы на основе хеша содержимого и DPI.
+func (c *RenderCache) GetKey(pageHash string, pageIndex int, dpi int) string {
+	data := fmt.Sprintf("%s|%d|%d", pageHash, pageIndex, dpi)
 	hash := sha256.Sum256([]byte(data))
 	return fmt.Sprintf("%x.png", hash)
 }
