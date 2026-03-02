@@ -10,10 +10,8 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/ivlev/pdf2video/internal/analyzer"
@@ -26,6 +24,7 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
+	"golang.org/x/sync/errgroup"
 )
 
 type VideoProject struct {
@@ -55,24 +54,6 @@ func NewVideoProject(cfg *config.Config, src source.Source, ve video.VideoEncode
 }
 
 func (p *VideoProject) Run(ctx context.Context) error {
-	// Если передан внешний контекст, связываем его с нашим
-	if ctx != nil {
-		go func() {
-			<-ctx.Done()
-			p.cancel()
-		}()
-	}
-
-	// Обработка сигналов OS для корректного прерывания
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		sig := <-sigChan
-		fmt.Printf("\n[*] Получен сигнал: %v. Завершение работы...\n", sig)
-		p.cancel()
-	}()
-
 	startTime := time.Now()
 	var renderStart, renderEnd, encodeStart, encodeEnd, concatStart time.Time
 
@@ -184,7 +165,6 @@ func (p *VideoProject) Run(ctx context.Context) error {
 	// Каналы для пайплайна
 	// jobs -> renderPool -> renderResults -> encodePool -> results
 	jobs := make(chan int, pageCount)
-	renderResults := make(chan *RenderResult, pageCount)
 	// Финализируем общую длительность по сумме сегментов (после выравнивания)
 	sumDur := 0.0
 	for _, d := range p.Config.PageDurations {
@@ -197,66 +177,17 @@ func (p *VideoProject) Run(ctx context.Context) error {
 
 	results := make([]string, pageCount)
 
-	var wgRender sync.WaitGroup
-	var wgEncode sync.WaitGroup
+	// Использование errgroup для управления пайплайном
+	g, gCtx := errgroup.WithContext(ctx)
 
-	// 1. Render Pool (CPU bound)
-	// Используем все доступные ядра для рендеринга PDF, но ограничиваем бюджетом памяти
+	// 1. Unified Pipeline (Balanced CPU/GPU)
+	// Мы объединяем рендеринг и кодирование в один воркер, чтобы обеспечить
+	// непрерывную загрузку системы и избежать простоев CPU, пока GPU занят.
 	frameSize := system.GetFrameSize(p.Config.Width, p.Config.Height)
-	numRenderWorkers := p.memory.GetRecommendedWorkers(frameSize, p.Config.Workers)
+	numWorkers := p.memory.GetRecommendedWorkers(frameSize, p.Config.Workers)
 
-	if numRenderWorkers > pageCount {
-		numRenderWorkers = pageCount
-	}
-
-	for w := 0; w < numRenderWorkers; w++ {
-		wgRender.Add(1)
-		go func() {
-			defer wgRender.Done()
-			for i := range jobs {
-				select {
-				case <-p.ctx.Done():
-					return
-				default:
-				}
-				dpi := p.calculateOptimalDPI(i)
-
-				frameSize := system.GetFrameSize(p.Config.Width, p.Config.Height)
-				if err := p.memory.Acquire(p.ctx, frameSize); err != nil {
-					return
-				}
-
-				var img image.Image
-				var err error
-
-				// Пытаемся получить из кэша
-				cacheKey := p.cache.GetKey(p.Config.InputPath, i, dpi)
-				if cachedImg, found := p.cache.Get(cacheKey); found {
-					img = cachedImg
-				} else {
-					img, err = p.Source.RenderPage(i, dpi)
-					if err == nil {
-						// Сохраняем в кэш для будущих запусков
-						_ = p.cache.Put(cacheKey, img)
-					}
-				}
-
-				if err != nil {
-					log.Printf("[!] Error rendering page %d: %v", i, err)
-					continue
-				}
-				// Отправляем результат рендеринга в канал кодирования
-				renderResults <- &RenderResult{Index: i, Image: img}
-			}
-		}()
-	}
-
-	// 2. Encode Pool (GPU/Encoder bound)
-	// Ограничиваем количество параллельных энкодеров, чтобы не перегрузить GPU/VRAM
-	// 4 - разумный компромисс для большинства GPU (NVENC/VideoToolbox)
-	numEncodeWorkers := 4
-	if numEncodeWorkers > pageCount {
-		numEncodeWorkers = pageCount
+	if numWorkers > pageCount {
+		numWorkers = pageCount
 	}
 
 	// Trace scenario collection
@@ -266,22 +197,51 @@ func (p *VideoProject) Run(ctx context.Context) error {
 	}
 	var traceMu sync.Mutex
 
-	for w := 0; w < numEncodeWorkers; w++ {
-		wgEncode.Add(1)
-		go func() {
-			defer wgEncode.Done()
-			for res := range renderResults {
+	renderStart = time.Now()
+	encodeStart = renderStart
+
+	for w := 0; w < numWorkers; w++ {
+		g.Go(func() error {
+			for i := range jobs {
 				select {
-				case <-p.ctx.Done():
-					return
+				case <-gCtx.Done():
+					return gCtx.Err()
 				default:
 				}
-				i := res.Index
-				img := res.Image
 
+				// --- STAGE 1: RENDER (CPU) ---
+				if err := p.memory.Acquire(gCtx, frameSize); err != nil {
+					return err
+				}
+
+				dpi := p.calculateOptimalDPI(i)
+				pageHash, hashErr := p.Source.GetPageHash(i)
+				if hashErr != nil {
+					p.memory.Release(frameSize)
+					return fmt.Errorf("error hashing page %d: %w", i, hashErr)
+				}
+
+				cacheKey := p.cache.GetKey(pageHash, i, dpi)
+				var img image.Image
+				var err error
+
+				if cachedImg, found := p.cache.Get(cacheKey); found {
+					img = cachedImg
+				} else {
+					img, err = p.Source.RenderPage(i, dpi)
+					if err == nil {
+						_ = p.cache.Put(cacheKey, img)
+					}
+				}
+
+				if err != nil {
+					p.memory.Release(frameSize)
+					return fmt.Errorf("error rendering page %d: %w", i, err)
+				}
+
+				// --- STAGE 2: ENCODE (GPU/CPU) ---
 				segPath := filepath.Join(p.tempDir, fmt.Sprintf("s%d.mp4", i))
 				duration := p.Config.PageDurations[i]
-
 				params := config.SegmentParams{
 					Width:         p.Config.Width,
 					Height:        p.Config.Height,
@@ -296,14 +256,11 @@ func (p *VideoProject) Run(ctx context.Context) error {
 					Trace:         p.Config.Trace,
 					TraceColor:    p.Config.TraceColor,
 				}
-
 				params.Filter = p.Effect.GenerateFilter(params)
 
+				// Debug/Trace drawing
 				if p.Config.Debug || p.Config.Trace {
-					// Collecting keyframes for trace log
 					keyframes := p.Effect.GenerateKeyframes(params)
-
-					// Save the trace data
 					traceMu.Lock()
 					traceScenario.Slides[i] = director.Slide{
 						ID:        i + 1,
@@ -312,25 +269,8 @@ func (p *VideoProject) Run(ctx context.Context) error {
 					}
 					traceMu.Unlock()
 
-					// If it's a ScenarioEffect, we just use its scenario. If Default, we create fake ones.
-					// We'll collect the generated keyframes in a thread-safe way?
-					// NO: Effect processing is pure here, but let's just do it directly on img copy.
 					if se, ok := p.Effect.(*effects.ScenarioEffect); ok {
 						newImg := p.debugDrawScenario(img, se, i, p.Config.Debug, p.Config.Trace)
-						if newImg != img {
-							if oldRgba, ok := img.(*image.RGBA); ok {
-								system.PutImage(oldRgba)
-							}
-							img = newImg
-						}
-					} else if len(keyframes) > 0 {
-						// For DefaultEffect, build a temporary ScenarioEffect to draw the trace map
-						tempScen := &director.Scenario{
-							Slides: []director.Slide{{Keyframes: keyframes}},
-						}
-						tempSE := effects.NewScenarioEffect(tempScen)
-						// Notice index is 0 because we just passed a 1-slide scenario
-						newImg := p.debugDrawScenario(img, tempSE, 0, p.Config.Debug, p.Config.Trace)
 						if newImg != img {
 							if oldRgba, ok := img.(*image.RGBA); ok {
 								system.PutImage(oldRgba)
@@ -340,41 +280,47 @@ func (p *VideoProject) Run(ctx context.Context) error {
 					}
 				}
 
-				err := p.Encoder.EncodeSegment(p.ctx, img, segPath, params, p.Config.VideoEncoder, p.Config.Quality)
+				encErr := p.Encoder.EncodeSegment(gCtx, img, segPath, params, p.Config.VideoEncoder, p.Config.Quality)
 
-				// Возвращаем буфер в пул после использования
+				// Сразу освобождаем память после кодирования
 				if rgba, ok := img.(*image.RGBA); ok {
 					system.PutImage(rgba)
-					p.memory.Release(system.GetFrameSize(p.Config.Width, p.Config.Height))
+					p.memory.Release(frameSize)
 				}
 
-				if err != nil {
-					log.Printf("[!] EncodeSegment error page %d: %v", i, err)
-					continue
+				if encErr != nil {
+					return fmt.Errorf("encode error page %d: %w", i, encErr)
 				}
 
 				results[i] = segPath
 				fmt.Printf("[>] Ready: %d/%d\n", i+1, pageCount)
 			}
-		}()
+			return nil
+		})
 	}
 
 	// Запускаем задачи рендеринга
+	g.Go(func() error {
+		defer close(jobs)
+		for i := 0; i < pageCount; i++ {
+			select {
+			case jobs <- i:
+			case <-gCtx.Done():
+				return gCtx.Err()
+			}
+		}
+		return nil
+	})
+
 	renderStart = time.Now()
-	for i := 0; i < pageCount; i++ {
-		jobs <- i
+	encodeStart = renderStart
+
+	// Ждем завершения всех воркеров через errgroup
+	if err := g.Wait(); err != nil {
+		return err
 	}
-	close(jobs)
-
-	// Ждем завершения рендеринга
-	wgRender.Wait()
-	renderEnd = time.Now()
-	close(renderResults)
-
-	// Ждем завершения кодирования
-	encodeStart = renderStart // Encode по факту стартует почти сразу с Render
-	wgEncode.Wait()
-	encodeEnd = time.Now()
+	renderEnd = time.Now() // На самом деле это конец всего пайплайна
+	encodeEnd = renderEnd
 
 	// Сохранение лога трассировки камеры, если включен Debug или Trace
 	if p.Config.Debug || p.Config.Trace {
@@ -600,12 +546,20 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 	// Используем Director для генерации путей камеры
 	dir := director.NewDirector(p.Config.Width, p.Config.Height)
 
-	// Инициализируем детектор (по умолчанию ContrastDetector)
-	var det analyzer.Detector
-	cdet := analyzer.NewContrastDetector()
-	cdet.MinBlockArea = p.Config.MinBlockArea
-	cdet.EdgeThreshold = p.Config.EdgeThreshold
-	det = cdet
+	// Инициализируем детектор на основе настроек
+	det, err := analyzer.NewDetector(p.Config.AnalyzeMode)
+	if err != nil {
+		return fmt.Errorf("ошибка инициализации детектора: %v", err)
+	}
+
+	// Настройка параметров, если детектор их поддерживает
+	if cdet, ok := det.(*analyzer.ContrastDetector); ok {
+		cdet.MinBlockArea = p.Config.MinBlockArea
+		cdet.EdgeThreshold = p.Config.EdgeThreshold
+	} else if edet, ok := det.(*analyzer.EnhancedDetector); ok {
+		edet.MinBlockArea = p.Config.MinBlockArea
+		edet.EdgeThreshold = p.Config.EdgeThreshold
+	}
 
 	var slides []director.Slide
 	for i := 0; i < pageCount; i++ {
@@ -617,36 +571,41 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 		fmt.Printf("[*] Анализ страницы %d/%d...\n", i+1, pageCount)
 
 		var img image.Image
-		var err error
+		var renderErr error
 
 		// Для анализа используем DPI из конфига (или адаптивный, если захотим)
 		dpi := p.Config.DPI
+		pageHash, _ := p.Source.GetPageHash(i)
 		frameSize := system.GetFrameSize(p.Config.Width, p.Config.Height)
+		cacheKey := p.cache.GetKey(pageHash, i, dpi)
 
-		cacheKey := p.cache.GetKey(p.Config.InputPath, i, dpi)
+		// Бронируем память (даже для кэша, т.к. Get() выделяет из пула)
+		if errAcq := p.memory.Acquire(p.ctx, frameSize); errAcq != nil {
+			return errAcq
+		}
+
 		if cachedImg, found := p.cache.Get(cacheKey); found {
 			img = cachedImg
 		} else {
-			// Бронируем память под новый рендеринг
-			if err := p.memory.Acquire(p.ctx, frameSize); err != nil {
-				return err
-			}
-
-			img, err = p.Source.RenderPage(i, dpi)
-			if err == nil {
+			img, renderErr = p.Source.RenderPage(i, dpi)
+			if renderErr == nil {
 				_ = p.cache.Put(cacheKey, img)
 			}
 		}
 
-		if err != nil {
-			log.Printf("[!] Ошибка рендеринга страницы %d для анализа: %v", i, err)
-			continue
+		// Если это OCR-детектор, обновляем контекст (источник и страницу)
+		if odet, ok := det.(*analyzer.OCRDetector); ok {
+			odet.Source = p.Source
+			odet.PageIndex = i
 		}
 
 		// Поиск блоков на изображении
 		blocks, err := det.Detect(img)
 		if rgba, ok := img.(*image.RGBA); ok {
 			system.PutImage(rgba)
+			p.memory.Release(frameSize)
+		} else if img != nil {
+			// Если вдруг не RGBA, все равно освобождаем бюджет
 			p.memory.Release(frameSize)
 		}
 
@@ -699,7 +658,7 @@ func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 	// Убеждаемся, что директория существует
 	os.MkdirAll(filepath.Dir(outputPath), 0755)
 
-	err := director.WriteScenario(scenario, outputPath)
+	err = director.WriteScenario(scenario, outputPath)
 	if err != nil {
 		return err
 	}

@@ -1,12 +1,16 @@
 package source
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/ivlev/pdf2video/internal/analyzer"
 )
 
 type ImageSource struct {
@@ -71,6 +75,24 @@ func (s *ImageSource) RenderPage(index int, dpi int) (image.Image, error) {
 		return nil, err
 	}
 	return img, nil
+}
+
+func (s *ImageSource) GetTextBlocks(index int) ([]analyzer.Block, error) {
+	// Image source doesn't support structured text extraction natively
+	return []analyzer.Block{}, nil
+}
+
+func (s *ImageSource) GetPageHash(index int) (string, error) {
+	path := s.paths[index]
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+
+	// Для изображений мы полагаемся на путь и дату изменения файла
+	data := fmt.Sprintf("%s|%s", path, info.ModTime().String())
+	h := sha256.Sum256([]byte(data))
+	return fmt.Sprintf("%x", h), nil
 }
 
 func (s *ImageSource) Close() error {

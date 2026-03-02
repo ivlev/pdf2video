@@ -97,7 +97,7 @@ func (e *FFmpegEncoder) buildFFmpegArgs(
 	switch encoderName {
 	case "h264_videotoolbox":
 		bitrate := quality * 100
-		args = append(args, "-b:v", fmt.Sprintf("%dk", bitrate))
+		args = append(args, "-b:v", fmt.Sprintf("%dk", bitrate), "-pix_fmt", "nv12", "-realtime", "true", "-prio_speed", "1")
 	case "h264_nvenc":
 		args = append(args, "-cq", fmt.Sprintf("%d", quality))
 	default: // libx264
@@ -269,7 +269,7 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 	case "h264_videotoolbox":
 		// VideoToolbox часто не поддерживает -q:v напрямую на всех версиях. Используем битрейт.
 		bitrate := params.Quality * 100 // кбит/с. 75 -> 7.5Мбит/с
-		qualityArgs = append(qualityArgs, "-b:v", fmt.Sprintf("%dk", bitrate))
+		qualityArgs = append(qualityArgs, "-b:v", fmt.Sprintf("%dk", bitrate), "-pix_fmt", "nv12", "-realtime", "true", "-prio_speed", "1")
 	case "h264_nvenc":
 		qualityArgs = append(qualityArgs, "-cq", fmt.Sprintf("%d", params.Quality))
 	default: // libx264

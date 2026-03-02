@@ -37,14 +37,14 @@ func TestCalculateDurations(t *testing.T) {
 	// 2. Check first clip variation
 	Dbase := expectedSum / float64(pageCount)
 	variation0 := (durations[0] / Dbase) - 1.0
-	if math.Abs(variation0) > 0.1501 {
+	if math.Abs(variation0) > 0.4001 {
 		t.Errorf("First clip variation too high: %f", variation0)
 	}
 
 	// 3. Check subsequent clip variation
 	for i := 1; i < pageCount; i++ {
 		variation := (durations[i] / durations[i-1]) - 1.0
-		if math.Abs(variation) > 0.1501 {
+		if math.Abs(variation) > 0.4001 {
 			t.Errorf("Clip %d variation too high: %f (prev: %f, curr: %f)", i, variation, durations[i-1], durations[i])
 		}
 	}

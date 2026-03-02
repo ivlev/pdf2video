@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/shirou/gopsutil/v3/mem"
+	"golang.org/x/sync/semaphore"
 )
 
 // MemoryManager контролирует бюджет оперативной памяти, чтобы предотвратить OOM.
@@ -14,7 +15,7 @@ type MemoryManager struct {
 	totalLimit int64 // в байтах
 	used       int64
 	mu         sync.Mutex
-	cond       *sync.Cond
+	sem        *semaphore.Weighted
 }
 
 func NewMemoryManager(maxMB int) *MemoryManager {
@@ -32,8 +33,8 @@ func NewMemoryManager(maxMB int) *MemoryManager {
 
 	m := &MemoryManager{
 		totalLimit: limit,
+		sem:        semaphore.NewWeighted(limit),
 	}
-	m.cond = sync.NewCond(&m.mu)
 
 	fmt.Printf("[*] Memory Budget initialized: %d MB\n", limit/1024/1024)
 	return m
@@ -41,33 +42,26 @@ func NewMemoryManager(maxMB int) *MemoryManager {
 
 // Acquire блокирует выполнение, пока не освободится достаточное количество памяти.
 func (m *MemoryManager) Acquire(ctx context.Context, bytes int64) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for m.used+bytes > m.totalLimit {
-		// Проверяем контекст, чтобы можно было прервать ожидание
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		m.cond.Wait()
+	if err := m.sem.Acquire(ctx, bytes); err != nil {
+		return err
 	}
 
+	m.mu.Lock()
 	m.used += bytes
+	m.mu.Unlock()
 	return nil
 }
 
 // Release освобождает забронированный объем памяти.
 func (m *MemoryManager) Release(bytes int64) {
+	m.sem.Release(bytes)
+
 	m.mu.Lock()
 	m.used -= bytes
 	if m.used < 0 {
 		m.used = 0
 	}
 	m.mu.Unlock()
-	m.cond.Broadcast()
 }
 
 // GetFrameSize рассчитывает примерный размер одного кадра RGBA в байтах.

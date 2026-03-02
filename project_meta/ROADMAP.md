@@ -46,7 +46,7 @@
 - [ ] **Tiled Rendering**: Рендеринг сверхтяжелых PDF страниц по частям (тайлам).
 
 ## 🔵 Этап 6: Quality Assurance & CI/CD (В ПЛАНЕ)
-- [ ] **System Testing**: Покрытие тестами пакета `internal/system` (Memory Manager, Cache).
+- [x] **System Testing**: Покрытие тестами пакета `internal/system` (Memory Manager, Cache).
 - [ ] **FFmpeg Mocking**: Разработка системы тестов для `internal/video` без запуска реального FFmpeg.
 - [ ] **Race Detection**: Регулярные тесты на состояние гонок в многопоточных очередях.
 - [ ] **CI Pipeline**: Настройка GitHub Actions для автоматической проверки билдов и тестов.
@@ -61,7 +61,7 @@
 5.  [ ] **Path Smoothing**: Сглаживание траекторий полета камеры (Splines/Inertia).
 
 ## 🚀 Будущие возможности
-- [ ] **Альтернативные детекторы**: OCR (Tesseract) и Saliency (тепловые карты внимания).
+- [x] **Альтернативные детекторы**: Структурный OCR (go-fitz) и Saliency (тепловые карты внимания).
 - [ ] **Advanced Camera Flights**: Сплайновая интерполяция (Catmull-Rom), адаптивный тайминг по OCR и физика инерции.
 - [ ] **TTS-интеграция**: Автоматическая озвучка текста из PDF.
 - [ ] **CI/CD Pipeline**: Автоматические бенчмарки и контроль качества при каждом комите.

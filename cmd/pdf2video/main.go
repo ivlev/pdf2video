@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ivlev/pdf2video/internal/config"
@@ -238,9 +240,25 @@ func main() {
 	ve := &video.FFmpegEncoder{}
 	eff := &effects.DefaultEffect{}
 
+	// Создаем контекст, который отменяется по сигналам OS
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("\n[*] Получен сигнал: %v. Завершение работы...\n", sig)
+		cancel()
+	}()
+
 	project := engine.NewVideoProject(cfg, src, ve, eff)
-	if err := project.Run(context.Background()); err != nil {
-		log.Fatalf("[-] Ошибка проекта: %v", err)
+	if err := project.Run(ctx); err != nil {
+		if err == context.Canceled {
+			fmt.Println("[!] Процесс прерван пользователем")
+		} else {
+			log.Fatalf("[-] Ошибка проекта: %v", err)
+		}
 	}
 
 	fmt.Printf("[+++] Успех! Результат: %s\n", cfg.OutputVideo)
