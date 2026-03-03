@@ -555,14 +555,34 @@ func (p *VideoProject) calculateDurations(pageCount int) {
 
 func (p *VideoProject) handleGenerateScenario(pageCount int) error {
 	fmt.Println("[*] Режим генерации сценария...")
+	p.Source.SetDPI(p.Config.DPI)
 
 	// Используем Director для генерации путей камеры
 	dir := director.NewDirector(p.Config.Width, p.Config.Height)
 
-	// Инициализируем детектор на основе настроек
-	det, err := analyzer.NewDetector(p.Config.AnalyzeMode)
+	// Smart Analysis Logic
+	hasText := p.hasTextLayer()
+	finalMode := p.Config.AnalyzeMode
+
+	if finalMode == "auto" {
+		if hasText {
+			finalMode = "ocr"
+			fmt.Println("[*] Автоопределение: найден слой текста, используется режим \"ocr\"")
+		} else {
+			finalMode = "contrast"
+			fmt.Println("[*] Автоопределение: слой текста не найден, используется режим \"contrast\"")
+		}
+	} else if finalMode == "ocr" && !hasText {
+		fmt.Println("[!] Предупреждение: слой текста не найден. Переключение в режим \"contrast\".")
+		finalMode = "contrast"
+	} else if finalMode == "contrast" && hasText {
+		fmt.Println("[!] Предупреждение: в PDF найден слой текста. Возможно, режим \"ocr\" даст лучший результат.")
+	}
+
+	// Инициализируем детектор на основе выбранного режима
+	det, err := analyzer.NewDetector(finalMode)
 	if err != nil {
-		return fmt.Errorf("ошибка инициализации детектора: %v", err)
+		return fmt.Errorf("ошибка инициализации детектора (%s): %v", finalMode, err)
 	}
 
 	// Настройка параметров, если детектор их поддерживает
@@ -876,4 +896,19 @@ func (p *VideoProject) calculateOptimalDPI(index int) int {
 	}
 
 	return result
+}
+
+func (p *VideoProject) hasTextLayer() bool {
+	// Проверяем первые несколько страниц на наличие текста (для экономии времени)
+	checkPages := p.Source.PageCount()
+	if checkPages > 3 {
+		checkPages = 3
+	}
+
+	for i := 0; i < checkPages; i++ {
+		if p.Source.HasTextLayer(i) {
+			return true
+		}
+	}
+	return false
 }
