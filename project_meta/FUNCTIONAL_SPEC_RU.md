@@ -1,6 +1,6 @@
 # Функциональная спецификация pdf2video
 
-**Версия:** 0.91 (Smart Directing 2.0: Scorer & Optimizer)
+**Версия:** 0.9.2 (Progress Indicator & Stats Fix)
 **Дата:** 2026-02-23
 
 ## 1. Обзор продукта

@@ -13,6 +13,7 @@ type ProgressBar struct {
 	StartTime  time.Time
 	LastUpdate time.Time
 	Label      string
+	finished   bool
 }
 
 func NewProgressBar(total int, label string) *ProgressBar {
@@ -37,6 +38,9 @@ func (p *ProgressBar) Increment() {
 }
 
 func (p *ProgressBar) render() {
+	if p.finished {
+		return
+	}
 	percent := float64(p.Current) / float64(p.Total)
 	filledWidth := int(percent * float64(p.Width))
 	if filledWidth > p.Width {
@@ -54,8 +58,9 @@ func (p *ProgressBar) render() {
 	fmt.Printf("\r%s [%s] %3.0f%% | ETA: %s   ",
 		p.Label, bar, percent*100, formatDuration(eta))
 
-	if p.Current == p.Total {
+	if p.Current == p.Total && !p.finished {
 		fmt.Println()
+		p.finished = true
 	}
 }
 

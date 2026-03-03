@@ -29,7 +29,7 @@ func main() {
 	}
 
 	// Версия сборки (можно переопределить через -ldflags)
-	buildVersion := "0.9.0"
+	buildVersion := "0.9.2"
 
 	fmt.Printf("--- PDF2Video v%s ---\n", buildVersion)
 	fmt.Println("[*] Высокопроизводительный движок генерации динамичных видео")
