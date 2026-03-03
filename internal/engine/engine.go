@@ -417,7 +417,7 @@ func (p *VideoProject) Run(ctx context.Context) error {
 		p1 := 70.0
 		p2 := 30.0
 		progress := p1 + (current/total)*p2
-		bar.Update(int(progress))
+		bar.Update(int(progress + 0.5))
 	})
 	if err != nil {
 		select {
@@ -436,7 +436,7 @@ func (p *VideoProject) Run(ctx context.Context) error {
 
 	if p.Config.ShowStats {
 		report := fmt.Sprintf(
-			"--- [PERFORMANCE REPORT] ---\n"+
+			"\n--- [PERFORMANCE REPORT] ---\n"+
 				"Build: %s\n"+
 				"Total Time: %.2fs\n"+
 				"Rendering (CPU): %.2fs\n"+
@@ -449,7 +449,7 @@ func (p *VideoProject) Run(ctx context.Context) error {
 		fmt.Print(report)
 
 		// Логирование в файл
-		logEntry := fmt.Sprintf("[%s] Build: %s | Input: %s | Pages: %d | Total: %.2fs | Render: %.2fs | Encode: %.2fs | FPS: %.2f\n",
+		logEntry := fmt.Sprintf("[%s] Build: %s | Input: %s | Pages: %d | Total: %.2fs | Render: %.2fs | Encode: %.2fs | Concat: %.2fs | FPS: %.2f\n",
 			time.Now().Format("2006-01-02 15:04:05"),
 			p.Config.BuildVersion,
 			filepath.Base(p.Config.InputPath),
@@ -457,6 +457,7 @@ func (p *VideoProject) Run(ctx context.Context) error {
 			totalTime.Seconds(),
 			renderTime.Seconds(),
 			encodeTime.Seconds(),
+			concatTime.Seconds(),
 			fps,
 		)
 
