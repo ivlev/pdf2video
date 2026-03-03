@@ -1,6 +1,7 @@
 package video
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"image"
@@ -15,9 +16,11 @@ import (
 	"github.com/ivlev/pdf2video/internal/system"
 )
 
+type ProgressFunc func(current, total float64)
+
 type VideoEncoder interface {
 	EncodeSegment(ctx context.Context, img image.Image, videoPath string, params config.SegmentParams, encoderName string, quality int) error
-	Concatenate(ctx context.Context, segments []config.VideoSegment, finalPath string, tmpDir string, params config.Config, audioDelayMs int) error
+	Concatenate(ctx context.Context, segments []config.VideoSegment, finalPath string, tmpDir string, params config.Config, audioDelayMs int, progress ProgressFunc) error
 }
 
 type FFmpegEncoder struct{}
@@ -120,7 +123,7 @@ func (e *FFmpegEncoder) writeRawRGBA(w io.Writer, img image.Image) error {
 	return err
 }
 
-func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.VideoSegment, finalPath string, tmpDir string, params config.Config, audioDelayMs int) error {
+func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.VideoSegment, finalPath string, tmpDir string, params config.Config, audioDelayMs int, progress ProgressFunc) error {
 	// Используем сложный фильтр (filter_complex), если:
 	// 1. Нужен переход (xfade) хотя бы в одном сегменте
 	// 2. Есть фоновое аудио для микширования
@@ -153,6 +156,9 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 		)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("ffmpeg concat error: %v, output: %s", err, string(out))
+		}
+		if progress != nil {
+			progress(params.TotalDuration, params.TotalDuration)
 		}
 		return nil
 	}
@@ -278,11 +284,37 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 
 	args = append(args, "-c:v", params.VideoEncoder, "-pix_fmt", "yuv420p")
 	args = append(args, qualityArgs...)
+	args = append(args, "-progress", "pipe:1")
 	args = append(args, finalPath)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ffmpeg xfade error: %v, output: %s", err, string(out))
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("ffmpeg concat error: %w", err)
+	}
+
+	if progress != nil {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "out_time_us=") {
+				var us int64
+				fmt.Sscanf(line, "out_time_us=%d", &us)
+				seconds := float64(us) / 1000000.0
+				progress(seconds, params.TotalDuration)
+			} else if line == "progress=end" {
+				progress(params.TotalDuration, params.TotalDuration)
+			}
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("ffmpeg concat error: %w", err)
 	}
 	return nil
 }
