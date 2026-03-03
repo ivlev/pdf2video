@@ -82,6 +82,10 @@ func (s *ImageSource) GetTextBlocks(index int) ([]analyzer.Block, error) {
 	return []analyzer.Block{}, nil
 }
 
+func (s *ImageSource) HasTextLayer(index int) bool {
+	return false
+}
+
 func (s *ImageSource) GetPageHash(index int) (string, error) {
 	path := s.paths[index]
 	info, err := os.Stat(path)
@@ -93,6 +97,10 @@ func (s *ImageSource) GetPageHash(index int) (string, error) {
 	data := fmt.Sprintf("%s|%s", path, info.ModTime().String())
 	h := sha256.Sum256([]byte(data))
 	return fmt.Sprintf("%x", h), nil
+}
+
+func (s *ImageSource) SetDPI(dpi int) {
+	// Image source has fixed dimensions, DPI doesn't affect its scaling
 }
 
 func (s *ImageSource) Close() error {

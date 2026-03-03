@@ -128,8 +128,8 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate AnalyzeMode
-	if c.AnalyzeMode != "contrast" && c.AnalyzeMode != "ocr" && c.AnalyzeMode != "enhanced" {
-		return fmt.Errorf("unsupported analyze mode: %s. Use 'enhanced', 'contrast' or 'ocr'", c.AnalyzeMode)
+	if c.AnalyzeMode != "contrast" && c.AnalyzeMode != "ocr" && c.AnalyzeMode != "enhanced" && c.AnalyzeMode != "auto" {
+		return fmt.Errorf("unsupported analyze mode: %s. Use 'auto', 'enhanced', 'contrast' or 'ocr'", c.AnalyzeMode)
 	}
 
 	return nil

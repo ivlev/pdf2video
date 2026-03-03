@@ -82,7 +82,7 @@ func (b *Builder) defineFlags() {
 	b.presetPtr = b.flags.String("preset", "", "Пресет формата: 16:9, 9:16 (Shorts/TikTok), 4:5 (Instagram)")
 	b.qualityPtr = b.flags.Int("quality", 0, "Качество видео (0 - авто, x264: CRF 1-51, VideoToolbox: битрейт = Q*100кбит/с)")
 	b.statsPtr = b.flags.Bool("stats", false, "Вывести статистику производительности и записать в benchmark.log")
-	b.analyzeModePtr = b.flags.String("analyze-mode", "contrast", "Режим анализа изображения: contrast (поиск границ), ocr (поиск текста)")
+	b.analyzeModePtr = b.flags.String("analyze-mode", "auto", "Режим анализа изображения: auto (автовыбор), contrast (поиск границ), ocr (поиск текста)")
 	b.minBlockAreaPtr = b.flags.Int("min-block-area", 500, "Минимальная площадь блока для детекции (в пикселях²)")
 	b.edgeThresholdPtr = b.flags.Float64("edge-threshold", 30.0, "Порог чувствительности детектора границ (Sobel)")
 	b.generateScenarioPtr = b.flags.Bool("generate-scenario", false, "Анализировать PDF и сгенерировать YAML-сценарий вместо видео")
