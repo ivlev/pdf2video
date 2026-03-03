@@ -200,6 +200,10 @@ func (p *VideoProject) Run(ctx context.Context) error {
 	renderStart = time.Now()
 	encodeStart = renderStart
 
+	bar := system.NewProgressBar(100, "[*] Generating Video")
+	renderedCount := 0
+	mu := sync.Mutex{}
+
 	for w := 0; w < numWorkers; w++ {
 		g.Go(func() error {
 			for i := range jobs {
@@ -293,7 +297,12 @@ func (p *VideoProject) Run(ctx context.Context) error {
 				}
 
 				results[i] = segPath
-				fmt.Printf("[>] Ready: %d/%d\n", i+1, pageCount)
+				mu.Lock()
+				renderedCount++
+				// Phase 1: 0-70%
+				progress := (float64(renderedCount) / float64(pageCount)) * 70.0
+				bar.Update(int(progress))
+				mu.Unlock()
 			}
 			return nil
 		})
@@ -311,9 +320,6 @@ func (p *VideoProject) Run(ctx context.Context) error {
 		}
 		return nil
 	})
-
-	renderStart = time.Now()
-	encodeStart = renderStart
 
 	// Ждем завершения всех воркеров через errgroup
 	if err := g.Wait(); err != nil {
@@ -405,8 +411,14 @@ func (p *VideoProject) Run(ctx context.Context) error {
 	}
 
 	fmt.Println("[*] Сборка финального видео (с эффектами переходов)...")
+
 	concatStart = time.Now()
-	err = p.Encoder.Concatenate(p.ctx, finalSegments, p.Config.OutputVideo, p.tempDir, *p.Config, audioDelayMs)
+	err = p.Encoder.Concatenate(p.ctx, finalSegments, p.Config.OutputVideo, p.tempDir, *p.Config, audioDelayMs, func(current, total float64) {
+		p1 := 70.0
+		p2 := 30.0
+		progress := p1 + (current/total)*p2
+		bar.Update(int(progress))
+	})
 	if err != nil {
 		select {
 		case <-p.ctx.Done():

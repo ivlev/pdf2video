@@ -7,11 +7,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/ivlev/pdf2video/internal/config"
 	"github.com/ivlev/pdf2video/internal/effects"
@@ -31,74 +28,30 @@ func main() {
 		os.MkdirAll(d, 0755)
 	}
 
-	inputPtr := flag.String("input", "", "Путь к PDF или папке с изображениями (по умолчанию: самый свежий файл в input/pdf/)")
-	outputPtr := flag.String("output", "", "Путь к видео (если пусто, генерируется автоматически в output/)")
-	durationPtr := flag.Float64("duration", 0, "Общая длительность видео (если 0, рассчитывается из -page-duration)")
-	pageDurationPtr := flag.Float64("page-duration", 0.3, "Длительность показа одной страницы/изображения в секундах")
-	widthPtr := flag.Int("width", 1280, "Ширина")
-	heightPtr := flag.Int("height", 720, "Высота")
-	fpsPtr := flag.Int("fps", 30, "FPS")
-	workersPtr := flag.Int("workers", runtime.NumCPU(), "Потоки")
-	fadePtr := flag.Float64("fade", 0.5, "Длительность перехода (сек)")
-	transitionPtr := flag.String("transition", "fade", "Тип перехода xfade: fade, wipeleft, slideup, pixelize, circlecrop, dissolve, none")
-	zoomPtr := flag.String("zoom-mode", "center", "Зум: center, top-left, top-right, bottom-left, bottom-right, random, out-center, out-random")
-	zoomSpeedPtr := flag.Float64("zoom-speed", 0.001, "Скорость зума (например, 0.001)")
-	dpiPtr := flag.Int("dpi", 300, "DPI")
-	audioPtr := flag.String("audio", "", "Путь к аудио (по умолчанию: самый свежий файл в input/audio/)")
-	audioSyncPtr := flag.Bool("audio-sync", true, "Синхронизировать длительность видео с аудио")
-	presetPtr := flag.String("preset", "", "Пресет формата: 16:9, 9:16 (Shorts/TikTok), 4:5 (Instagram)")
-	qualityPtr := flag.Int("quality", 0, "Качество видео (0 - авто, x264: CRF 1-51, VideoToolbox: битрейт = Q*100кбит/с)")
-	statsPtr := flag.Bool("stats", false, "Вывести статистику производительности и записать в benchmark.log")
-	analyzeModePtr := flag.String("analyze-mode", "contrast", "Режим анализа изображения: contrast (поиск границ), ocr (поиск текста)")
-	minBlockAreaPtr := flag.Int("min-block-area", 500, "Минимальная площадь блока для детекции (в пикселях²)")
-	edgeThresholdPtr := flag.Float64("edge-threshold", 30.0, "Порог чувствительности детектора границ (Sobel)")
-	generateScenarioPtr := flag.Bool("generate-scenario", false, "Анализировать PDF и сгенерировать YAML-сценарий вместо видео")
-	scenarioOutputPtr := flag.String("scenario-output", "", "Путь для сохранения сгенерированного сценария")
-	scenarioInputPtr := flag.String("scenario", "", "Путь к YAML-сценарию для рендеринга видео с точным управлением камерой")
-	outroDurationPtr := flag.Float64("outro-duration", 1.0, "Длительность возврата камеры к зуму 1:1 перед переходом (сек)")
-	bgAudioPtr := flag.String("bg-audio", "", "Путь к фоновому аудио (по умолчанию: самый свежий файл в input/background/)")
-	bgVolumePtr := flag.Float64("bg-volume", 0.3, "Громкость фонового аудио (0.0 - 1.0, по умолчанию 0.3)")
-	debugPtr := flag.Bool("debug", false, "Режим отладки: показывать рамки отслеживания камеры")
-	blackScreenDurPtr := flag.Float64("black-screen-duration", 2.0, "Длительность черного экрана в начале и в конце видео (сек)")
-	blackScreenTransPtr := flag.String("black-screen-transition", "", "Переход для черного экрана (по умолчанию совпадает с -transition)")
-	tracePtr := flag.Bool("trace", false, "Режим трассировки: показывать направление движения камеры и точки остановок")
-	traceColorPtr := flag.String("trace-color", "#FFFFFF", "Цвет текста координат в режиме трассировки (HEX: #FFFFFF, #00FF00)")
-
-	flag.Parse()
-
 	// Версия сборки (можно переопределить через -ldflags)
 	buildVersion := "0.9.0"
 
 	fmt.Printf("--- PDF2Video v%s ---\n", buildVersion)
 	fmt.Println("[*] Высокопроизводительный движок генерации динамичных видео")
 
-	width, height := *widthPtr, *heightPtr
-	switch *presetPtr {
-	case "16:9":
-		width, height = 1280, 720
-	case "9:16":
-		width, height = 720, 1280
-	case "4:5":
-		width, height = 1080, 1350
+	builder := config.NewBuilder(buildVersion)
+	cfg, err := builder.Build(os.Args[1:])
+	if err != nil {
+		if err == flag.ErrHelp {
+			os.Exit(0)
+		}
+		log.Fatalf("[-] Ошибка инициализации конфигурации: %v", err)
 	}
 
-	inputPath := *inputPtr
-	if inputPath == "" {
-		latest, err := system.FindLatestPDF("input/pdf")
-		if err != nil {
-			log.Fatalf("[-] Ошибка: %v. Положите PDF в input/pdf/", err)
-		}
-		inputPath = latest
-		fmt.Printf("[*] Выбран файл: %s\n", inputPath)
+	if cfg.VideoEncoder != "libx264" {
+		fmt.Printf("[*] Обнаружено аппаратное ускорение: %s\n", cfg.VideoEncoder)
 	}
 
 	var src source.Source
-	var err error
-
-	if strings.HasSuffix(strings.ToLower(inputPath), ".pdf") {
-		src, err = source.NewFitzPDFSource(inputPath)
+	if strings.HasSuffix(strings.ToLower(cfg.InputPath), ".pdf") {
+		src, err = source.NewFitzPDFSource(cfg.InputPath)
 	} else {
-		src, err = source.NewImageSource(inputPath)
+		src, err = source.NewImageSource(cfg.InputPath)
 	}
 
 	if err != nil {
@@ -106,134 +59,8 @@ func main() {
 	}
 	defer src.Close()
 
-	pageCount := src.PageCount()
-	if pageCount == 0 {
+	if src.PageCount() == 0 {
 		log.Fatalf("[-] Ошибка: в источнике нет страниц или изображений")
-	}
-
-	totalDuration := *durationPtr
-
-	// Обработка аудио
-	audioPath := *audioPtr
-	if audioPath == "" {
-		latest, err := system.FindLatestAudio("input/audio")
-		if err == nil {
-			audioPath = latest
-			fmt.Printf("[*] Выбрано аудио: %s\n", audioPath)
-		}
-	}
-
-	if audioPath != "" && *audioSyncPtr {
-		audioDur, err := system.GetAudioDuration(audioPath)
-		if err == nil {
-			totalDuration = audioDur
-			fmt.Printf("[*] Длительность видео установлена по аудио: %.2fs\n", totalDuration)
-		} else {
-			log.Printf("[!] Не удалось получить длительность аудио: %v", err)
-		}
-	}
-
-	// Обработка фонового аудио
-	bgAudioPath := *bgAudioPtr
-	if bgAudioPath == "" {
-		latest, err := system.FindLatestAudio("input/background")
-		if err == nil {
-			bgAudioPath = latest
-			fmt.Printf("[*] Выбрано фоновое аудио: %s\n", bgAudioPath)
-		}
-	}
-
-	if totalDuration <= 0 {
-		totalDuration = float64(pageCount) * (*pageDurationPtr)
-	}
-
-	finalOutput := *outputPtr
-	if finalOutput == "" {
-		var nameSource string
-		if strings.HasSuffix(strings.ToLower(inputPath), ".pdf") {
-			nameSource = inputPath
-		} else {
-			if audioPath != "" {
-				nameSource = audioPath
-			} else {
-				// Пытаемся найти самое свежее изображение для имени файла
-				latestImg, err := system.FindLatestImage(inputPath)
-				if err == nil {
-					nameSource = latestImg
-				} else {
-					nameSource = inputPath
-				}
-			}
-		}
-
-		baseName := filepath.Base(nameSource)
-		ext := filepath.Ext(baseName)
-		nameOnly := strings.TrimSuffix(baseName, ext)
-		cleanName := strings.ReplaceAll(nameOnly, " ", "_")
-		timestamp := time.Now().Format("2006-01-02_15-04-05")
-		finalOutput = filepath.Join("output", fmt.Sprintf("%s_%s.mp4", cleanName, timestamp))
-	}
-
-	encoderName, _ := system.GetBestH264Encoder()
-	if encoderName != "libx264" {
-		fmt.Printf("[*] Обнаружено аппаратное ускорение: %s\n", encoderName)
-	}
-
-	quality := *qualityPtr
-	if quality == 0 {
-		switch encoderName {
-		case "h264_videotoolbox":
-			quality = 75 // Хорошее качество для VideoToolbox
-		case "h264_nvenc":
-			quality = 28 // Эквивалент CRF для NVENC
-		default:
-			quality = 23 // Стандартный CRF для x264
-		}
-	}
-
-	blackScreenTrans := *blackScreenTransPtr
-	if blackScreenTrans == "" {
-		blackScreenTrans = *transitionPtr
-	}
-
-	cfg := &config.Config{
-		InputPath:             inputPath,
-		OutputVideo:           finalOutput,
-		TotalDuration:         totalDuration,
-		Width:                 width,
-		Height:                height,
-		FPS:                   *fpsPtr,
-		Workers:               *workersPtr,
-		FadeDuration:          *fadePtr,
-		TransitionType:        *transitionPtr,
-		ZoomMode:              *zoomPtr,
-		ZoomSpeed:             *zoomSpeedPtr,
-		DPI:                   *dpiPtr,
-		AudioPath:             audioPath,
-		Preset:                *presetPtr,
-		VideoEncoder:          encoderName,
-		Quality:               quality,
-		ShowStats:             *statsPtr,
-		BuildVersion:          buildVersion,
-		AnalyzeMode:           *analyzeModePtr,
-		MinBlockArea:          *minBlockAreaPtr,
-		EdgeThreshold:         *edgeThresholdPtr,
-		GenerateScenario:      *generateScenarioPtr,
-		ScenarioOutput:        *scenarioOutputPtr,
-		ScenarioInput:         *scenarioInputPtr,
-		OutroDuration:         *outroDurationPtr,
-		BackgroundAudio:       bgAudioPath,
-		BackgroundVolume:      *bgVolumePtr,
-		Debug:                 *debugPtr,
-		BlackScreenDuration:   *blackScreenDurPtr,
-		BlackScreenTransition: blackScreenTrans,
-		Trace:                 *tracePtr,
-		TraceColor:            *traceColorPtr,
-	}
-
-	// Валидация конфигурации перед началом работы
-	if err := cfg.Validate(); err != nil {
-		log.Fatalf("[-] Ошибка конфигурации: %v", err)
 	}
 
 	// Инициализируем зависимости
