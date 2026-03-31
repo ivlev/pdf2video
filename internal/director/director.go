@@ -9,6 +9,15 @@ import (
 	"github.com/ivlev/pdf2video/internal/analyzer"
 )
 
+// SlideTimings holds the calculated durations for all parts of a slide
+type SlideTimings struct {
+	Intro    float64
+	Outro    float64
+	Fade     float64
+	Dwell    []float64 // Indexed same as blocks
+	Total    float64
+}
+
 // Director generates camera path scenarios from detected blocks
 type Director struct {
 	ViewportWidth  int
@@ -36,11 +45,11 @@ func (d *Director) GenerateScenario(blocks []analyzer.Block, input string, total
 	// Sort blocks in reading order (top-to-bottom, left-to-right)
 	sortedBlocks := d.sortBlocks(blocks)
 
-	// Calculate duration per block
-	dwellTime := d.calculateDwellTime(totalDuration, fadeDuration, outroDuration, len(sortedBlocks))
+	// Calculate durations per block and slide components using adaptive logic
+	timings := d.calculateDwellTimes(totalDuration, fadeDuration, outroDuration, sortedBlocks)
 
 	// Generate keyframes
-	keyframes := d.generateKeyframes(sortedBlocks, dwellTime, totalDuration, fadeDuration, outroDuration)
+	keyframes := d.generateKeyframes(sortedBlocks, timings)
 
 	slide := Slide{
 		ID:        1,
@@ -78,33 +87,137 @@ func (d *Director) sortBlocks(blocks []analyzer.Block) []analyzer.Block {
 	return sorted
 }
 
-// calculateDwellTime determines how long to show each block
-func (d *Director) calculateDwellTime(totalDuration, fadeDuration, outroDuration float64, blockCount int) float64 {
-	// Reserve time for intro (1s) and outro zoom-out (outroDuration)
-	// Outro zoom-out must finish before the fade starts
-	introDuration := 1.0
-	reservedDuration := introDuration + outroDuration + fadeDuration
-	availableDuration := totalDuration - reservedDuration
-
-	if availableDuration <= 0 {
-		availableDuration = totalDuration
+// calculateDwellTimes determines adaptive stay duration for each block based on importance and content.
+// It ensures that Intro + Outro + Fade + sum(Dwell) == totalDuration.
+func (d *Director) calculateDwellTimes(totalDuration, fadeDuration, outroDuration float64, blocks []analyzer.Block) SlideTimings {
+	res := SlideTimings{
+		Fade:  fadeDuration,
+		Total: totalDuration,
 	}
 
-	dwellTime := availableDuration / float64(blockCount)
-
-	// Clamp to min/max
-	if dwellTime < d.MinDwell {
-		dwellTime = d.MinDwell
-	}
-	if dwellTime > d.MaxDwell {
-		dwellTime = d.MaxDwell
+	if len(blocks) == 0 {
+		return res
 	}
 
-	return dwellTime
+	// 1. Handle Reserved Time (Intro/Outro/Fade)
+	// We MUST respect fadeDuration as it's used for xfade in FFmpeg.
+	// If totalDuration is too small even for fade, we scale fade down (though engine should prevent this).
+	actualFade := fadeDuration
+	if actualFade > totalDuration {
+		actualFade = totalDuration
+	}
+	res.Fade = actualFade
+
+	// Remaining for intro + outro + blocks
+	remaining := totalDuration - actualFade
+	introNominal := 1.0
+	outroNominal := outroDuration
+
+	// If remaining is not enough for intro + outro, scale them down proportionally
+	if remaining < (introNominal + outroNominal) {
+		if remaining <= 0 {
+			res.Intro = 0
+			res.Outro = 0
+		} else {
+			scale := remaining / (introNominal + outroNominal)
+			res.Intro = introNominal * scale
+			res.Outro = outroNominal * scale
+		}
+	} else {
+		res.Intro = introNominal
+		res.Outro = outroNominal
+	}
+
+	availableDuration := totalDuration - (res.Intro + res.Outro + res.Fade)
+	if availableDuration < 0.001 {
+		availableDuration = 0.001 // Minimum available for division
+	}
+
+	// 2. Assign weights
+	weights := make([]float64, len(blocks))
+	totalWeight := 0.0
+
+	for i, b := range blocks {
+		weight := b.Priority
+		if weight == 0 {
+			weight = 0.5
+		}
+
+		multiplier := 1.0
+		switch b.Type {
+		case analyzer.BlockTypeHeader:
+			multiplier = 0.8
+		case analyzer.BlockTypeChart, analyzer.BlockTypeDiagram:
+			multiplier = 1.5
+		case analyzer.BlockTypeImage:
+			multiplier = 1.1
+		case analyzer.BlockTypeText:
+			multiplier = 1.2
+		}
+		weight *= multiplier
+
+		if b.Metrics.EdgeDensity > 0 {
+			weight *= (1.0 + b.Metrics.EdgeDensity)
+		}
+
+		weights[i] = weight
+		totalWeight += weight
+	}
+
+	// 3. Distribute time
+	durations := make([]float64, len(blocks))
+	if totalWeight == 0 {
+		equal := availableDuration / float64(len(blocks))
+		for i := range durations {
+			durations[i] = equal
+		}
+	} else {
+		for i := range weights {
+			durations[i] = (weights[i] / totalWeight) * availableDuration
+		}
+	}
+
+	// 4. Clamping and redistribution
+	// We use d.MinDwell but we must ensure we don't exceed availableDuration
+	// If sum(minDwell) > availableDuration, we scale minDwell down
+	minTotal := d.MinDwell * float64(len(blocks))
+	effectiveMin := d.MinDwell
+	if minTotal > availableDuration && availableDuration > 0 {
+		effectiveMin = availableDuration / float64(len(blocks))
+	}
+
+	for iteration := 0; iteration < 3; iteration++ {
+		surplus := 0.0
+		adjustableIndices := []int{}
+
+		for i := range durations {
+			if durations[i] < effectiveMin {
+				surplus += durations[i] - effectiveMin
+				durations[i] = effectiveMin
+			} else if durations[i] > d.MaxDwell {
+				surplus += durations[i] - d.MaxDwell
+				durations[i] = d.MaxDwell
+			} else {
+				adjustableIndices = append(adjustableIndices, i)
+			}
+		}
+
+		if math.Abs(surplus) < 0.001 || len(adjustableIndices) == 0 {
+			break
+		}
+
+		fragment := surplus / float64(len(adjustableIndices))
+		for _, idx := range adjustableIndices {
+			durations[idx] += fragment
+		}
+	}
+
+	res.Dwell = durations
+	return res
 }
 
-// generateKeyframes creates keyframes for camera movement
-func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDuration, fadeDuration, outroDuration float64) []Keyframe {
+// generateKeyframes creates keyframes for camera movement using adaptive dwell durations and precise slide timings
+func (d *Director) generateKeyframes(blocks []analyzer.Block, t SlideTimings) []Keyframe {
 	keyframes := []Keyframe{}
 
 	// Start with full view
@@ -120,11 +233,12 @@ func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDu
 		Zoom: 1.0,
 	})
 
-	currentTime := 1.0 // 1s intro
+	currentTime := t.Intro
 
-	// Generate keyframes for each block
+	// Generate keyframes for each block using its adaptive duration
 	for i, block := range blocks {
 		zoom := d.calculateZoom(block.Rect)
+		localDwell := t.Dwell[i]
 
 		keyframes = append(keyframes, Keyframe{
 			Time:  currentTime,
@@ -138,12 +252,11 @@ func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDu
 			Zoom: zoom,
 		})
 
-		currentTime += dwellTime
+		currentTime += localDwell
 	}
 
 	// End of blocks, finish exactly outroDuration before the fade starts
-	// Unless we are already past that time (dwellTime too short)
-	outroZoomOutStartTime := totalDuration - fadeDuration - outroDuration
+	outroZoomOutStartTime := t.Total - t.Fade - t.Outro
 	if outroZoomOutStartTime < currentTime {
 		outroZoomOutStartTime = currentTime
 	}
@@ -166,7 +279,7 @@ func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDu
 
 	// End with full view exactly when the transition starts
 	keyframes = append(keyframes, Keyframe{
-		Time:  totalDuration - fadeDuration,
+		Time:  t.Total - t.Fade,
 		Focus: "full_view",
 		Rect: Rectangle{
 			X: 0,
@@ -179,7 +292,7 @@ func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDu
 
 	// Maintain full view during the crossfade
 	keyframes = append(keyframes, Keyframe{
-		Time:  totalDuration,
+		Time:  t.Total,
 		Focus: "full_view",
 		Rect: Rectangle{
 			X: 0,

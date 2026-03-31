@@ -156,7 +156,7 @@ Analyzes slides, detects key blocks, and creates a YAML scenario in `internal/sc
 - **Content-Aware Analysis:** Evaluation of block importance via Edge Density and Color Variance. Helps differentiate between text and graphics.
 - **Semantic Scoring:** Content type prioritization. Headers and charts receive higher weight (up to 1.0) than body text or footers.
 - **Trajectory Optimizer:** Intelligent ROI sorting using a greedy algorithm that combines block importance (Priority) and physical proximity (Distance Weight) to minimize redundant camera travel and prevent erratic jumps.
+- **Adaptive Dwell Time:** Dynamic stay duration adjustment for blocks based on their type (charts, text) and visual density.
 
 **PLANNED:**
-- **Adaptive Dwell Time (PLANNED):** Dynamic adjustment of travel speeds and dwell times based on block significance.
-- **Cinematic Smoothing (PLANNED):** Smooth camera trajectories (Splines) and movement inertia physics.
+- **Path Smoothing (PLANNED):** Smooth camera trajectories (Splines) and movement inertia physics.
