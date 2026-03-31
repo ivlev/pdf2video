@@ -49,6 +49,7 @@ type Builder struct {
 	blackScreenTransPtr *string
 	tracePtr            *bool
 	traceColorPtr       *string
+	autoPtr             *bool
 	version             string
 }
 
@@ -76,13 +77,13 @@ func (b *Builder) defineFlags() {
 	b.transitionPtr = b.flags.String("transition", "fade", "Тип перехода xfade: fade, wipeleft, slideup, pixelize, circlecrop, dissolve, none")
 	b.zoomPtr = b.flags.String("zoom-mode", "center", "Зум: center, top-left, top-right, bottom-left, bottom-right, random, out-center, out-random")
 	b.zoomSpeedPtr = b.flags.Float64("zoom-speed", 0.001, "Скорость зума (например, 0.001)")
-	b.dpiPtr = b.flags.Int("dpi", 300, "DPI")
+	b.dpiPtr = b.flags.Int("dpi", 300, "DPI рендеринга PDF (300 по умолчанию, 0 для автоподбора)")
 	b.audioPtr = b.flags.String("audio", "", "Путь к аудио (по умолчанию: самый свежий файл в input/audio/)")
 	b.audioSyncPtr = b.flags.Bool("audio-sync", true, "Синхронизировать длительность видео с аудио")
 	b.presetPtr = b.flags.String("preset", "", "Пресет формата: 16:9, 9:16 (Shorts/TikTok), 4:5 (Instagram)")
 	b.qualityPtr = b.flags.Int("quality", 0, "Качество видео (0 - авто, x264: CRF 1-51, VideoToolbox: битрейт = Q*100кбит/с)")
 	b.statsPtr = b.flags.Bool("stats", false, "Вывести статистику производительности и записать в benchmark.log")
-	b.analyzeModePtr = b.flags.String("analyze-mode", "auto", "Режим анализа изображения: auto (автовыбор), contrast (поиск границ), ocr (поиск текста)")
+	b.analyzeModePtr = b.flags.String("analyze-mode", "auto", "Режим анализа: auto (умный выбор), contrast (границы), ocr (текст)")
 	b.minBlockAreaPtr = b.flags.Int("min-block-area", 500, "Минимальная площадь блока для детекции (в пикселях²)")
 	b.edgeThresholdPtr = b.flags.Float64("edge-threshold", 30.0, "Порог чувствительности детектора границ (Sobel)")
 	b.generateScenarioPtr = b.flags.Bool("generate-scenario", false, "Анализировать PDF и сгенерировать YAML-сценарий вместо видео")
@@ -96,6 +97,7 @@ func (b *Builder) defineFlags() {
 	b.blackScreenTransPtr = b.flags.String("black-screen-transition", "", "Переход для черного экрана (по умолчанию совпадает с -transition)")
 	b.tracePtr = b.flags.Bool("trace", false, "Режим трассировки: показывать направление движения камеры и точки остановок")
 	b.traceColorPtr = b.flags.String("trace-color", "#FFFFFF", "Цвет текста координат в режиме трассировки (HEX: #FFFFFF, #00FF00)")
+	b.autoPtr = b.flags.Bool("auto", false, "Включить все автоматические режимы (анализ, DPI, качество)")
 }
 
 // Build парсит флаги и собирает итоговую конфигурацию
@@ -201,6 +203,15 @@ func (b *Builder) Build(args []string) (*Config, error) {
 	}
 	c.Trace = *b.tracePtr
 	c.TraceColor = *b.traceColorPtr
+
+	// Handle -auto shortcut
+	if *b.autoPtr {
+		c.AnalyzeMode = "auto"
+		// If DPI was not explicitly set on command line, or is 300 default, we can consider it "auto" if -auto is flag?
+		// But let's just make it explicit:
+		c.DPI = 0
+		c.Quality = 0 // already auto
+	}
 
 	// Validation
 	if err := c.Validate(); err != nil {
