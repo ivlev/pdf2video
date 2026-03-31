@@ -87,8 +87,8 @@ func (c *Config) Validate() error {
 	if c.FPS < 1 || c.FPS > 120 {
 		return fmt.Errorf("fps must be between 1 and 120 (got %d)", c.FPS)
 	}
-	if c.DPI < 72 || c.DPI > 1200 {
-		return fmt.Errorf("dpi must be between 72 and 1200 (got %d)", c.DPI)
+	if c.DPI != 0 && (c.DPI < 72 || c.DPI > 1200) {
+		return fmt.Errorf("dpi must be between 72 and 1200, or 0 for auto (got %d)", c.DPI)
 	}
 	if c.FadeDuration < 0 {
 		return fmt.Errorf("fade duration cannot be negative")

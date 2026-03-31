@@ -883,6 +883,9 @@ func (p *VideoProject) calculateOptimalDPI(index int) int {
 	// но не больше, чем задал пользователь в конфиге, если он хочет меньше.
 	minDPI := 150.0
 	maxDPI := float64(p.Config.DPI)
+	if maxDPI <= 0 {
+		maxDPI = 1200 // Absolute reasonable maximum for auto-DPI
+	}
 	if maxDPI < minDPI {
 		minDPI = maxDPI
 	}

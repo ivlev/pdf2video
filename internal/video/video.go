@@ -2,6 +2,7 @@ package video
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -52,24 +53,28 @@ func (e *FFmpegEncoder) EncodeSegment(
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return fmt.Errorf("stdin pipe error: %w", err)
+		return fmt.Errorf("stdin pipe error: %w, stderr: %s", err, stderr.String())
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("ffmpeg start error: %w", err)
+		return fmt.Errorf("ffmpeg start error: %w, stderr: %s", err, stderr.String())
 	}
 
 	// Запись raw RGBA данных
 	if err := e.writeRawRGBA(stdin, img); err != nil {
 		stdin.Close()
-		return fmt.Errorf("write raw error: %w", err)
+		_ = cmd.Wait() // Clean up process
+		return fmt.Errorf("write raw error: %w, stderr: %s", err, stderr.String())
 	}
 	stdin.Close()
 
 	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("ffmpeg wait error: %w", err)
+		return fmt.Errorf("ffmpeg wait error: %w, stderr: %s", err, stderr.String())
 	}
 
 	return nil
@@ -100,7 +105,7 @@ func (e *FFmpegEncoder) buildFFmpegArgs(
 	switch encoderName {
 	case "h264_videotoolbox":
 		bitrate := quality * 100
-		args = append(args, "-b:v", fmt.Sprintf("%dk", bitrate), "-pix_fmt", "nv12", "-realtime", "true", "-prio_speed", "1")
+		args = append(args, "-b:v", fmt.Sprintf("%dk", bitrate), "-pix_fmt", "yuv420p", "-realtime", "true")
 	case "h264_nvenc":
 		args = append(args, "-cq", fmt.Sprintf("%d", quality))
 	default: // libx264
@@ -212,13 +217,13 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 	if audioIndex != -1 {
 		mainAudioFilter := ""
 		if audioDelayMs > 0 {
-			// adelay creates delay, apad pads with silence infinitely at the end
-			filterGraph += fmt.Sprintf("[%d:a]adelay=%d|%d,apad[padded_a];", audioIndex, audioDelayMs, audioDelayMs)
+			// Pad with silence to match total video duration to avoid infinite loops
+			filterGraph += fmt.Sprintf("[%d:a]adelay=%d|%d,apad=whole_len=%f[padded_a];", audioIndex, audioDelayMs, audioDelayMs, params.TotalDuration)
 			mainAudioFilter = "[padded_a]"
 			audioOut = "[padded_a]"
 		} else {
-			// If no delay, just pad infinitely
-			filterGraph += fmt.Sprintf("[%d:a]apad[padded_a];", audioIndex)
+			// Pad with silence to match total video duration
+			filterGraph += fmt.Sprintf("[%d:a]apad=whole_len=%f[padded_a];", audioIndex, params.TotalDuration)
 			mainAudioFilter = "[padded_a]"
 			audioOut = "[padded_a]"
 		}
@@ -275,7 +280,7 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 	case "h264_videotoolbox":
 		// VideoToolbox часто не поддерживает -q:v напрямую на всех версиях. Используем битрейт.
 		bitrate := params.Quality * 100 // кбит/с. 75 -> 7.5Мбит/с
-		qualityArgs = append(qualityArgs, "-b:v", fmt.Sprintf("%dk", bitrate), "-pix_fmt", "nv12", "-realtime", "true", "-prio_speed", "1")
+		qualityArgs = append(qualityArgs, "-b:v", fmt.Sprintf("%dk", bitrate), "-realtime", "true")
 	case "h264_nvenc":
 		qualityArgs = append(qualityArgs, "-cq", fmt.Sprintf("%d", params.Quality))
 	default: // libx264
@@ -284,7 +289,7 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 
 	args = append(args, "-c:v", params.VideoEncoder, "-pix_fmt", "yuv420p")
 	args = append(args, qualityArgs...)
-	args = append(args, "-progress", "pipe:1")
+	args = append(args, "-progress", "pipe:1", "-movflags", "+faststart")
 	args = append(args, finalPath)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
@@ -294,8 +299,11 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 		return fmt.Errorf("failed to get stdout pipe: %w", err)
 	}
 
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("ffmpeg concat error: %w", err)
+		return fmt.Errorf("ffmpeg concat error: %w, stderr: %s", err, stderr.String())
 	}
 
 	if progress != nil {
@@ -314,7 +322,7 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 	}
 
 	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("ffmpeg concat error: %w", err)
+		return fmt.Errorf("ffmpeg concat error: %w, stderr: %s", err, stderr.String())
 	}
 	return nil
 }
