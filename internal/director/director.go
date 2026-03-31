@@ -36,11 +36,11 @@ func (d *Director) GenerateScenario(blocks []analyzer.Block, input string, total
 	// Sort blocks in reading order (top-to-bottom, left-to-right)
 	sortedBlocks := d.sortBlocks(blocks)
 
-	// Calculate duration per block
-	dwellTime := d.calculateDwellTime(totalDuration, fadeDuration, outroDuration, len(sortedBlocks))
+	// Calculate durations per block using adaptive logic
+	dwellTimes := d.calculateDwellTimes(totalDuration, fadeDuration, outroDuration, sortedBlocks)
 
 	// Generate keyframes
-	keyframes := d.generateKeyframes(sortedBlocks, dwellTime, totalDuration, fadeDuration, outroDuration)
+	keyframes := d.generateKeyframes(sortedBlocks, dwellTimes, totalDuration, fadeDuration, outroDuration)
 
 	slide := Slide{
 		ID:        1,
@@ -78,33 +78,102 @@ func (d *Director) sortBlocks(blocks []analyzer.Block) []analyzer.Block {
 	return sorted
 }
 
-// calculateDwellTime determines how long to show each block
-func (d *Director) calculateDwellTime(totalDuration, fadeDuration, outroDuration float64, blockCount int) float64 {
-	// Reserve time for intro (1s) and outro zoom-out (outroDuration)
-	// Outro zoom-out must finish before the fade starts
+// calculateDwellTimes determines adaptive stay duration for each block based on importance and content
+func (d *Director) calculateDwellTimes(totalDuration, fadeDuration, outroDuration float64, blocks []analyzer.Block) []float64 {
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	// 1. Reserve fixed time
 	introDuration := 1.0
 	reservedDuration := introDuration + outroDuration + fadeDuration
 	availableDuration := totalDuration - reservedDuration
-
 	if availableDuration <= 0 {
 		availableDuration = totalDuration
 	}
 
-	dwellTime := availableDuration / float64(blockCount)
+	// 2. Assign weights
+	weights := make([]float64, len(blocks))
+	totalWeight := 0.0
 
-	// Clamp to min/max
-	if dwellTime < d.MinDwell {
-		dwellTime = d.MinDwell
-	}
-	if dwellTime > d.MaxDwell {
-		dwellTime = d.MaxDwell
+	for i, b := range blocks {
+		// Base weight from priority (0.0-1.0)
+		weight := b.Priority
+		if weight == 0 {
+			weight = 0.5 // Default for legacy/simple blocks
+		}
+
+		// Multiplier based on content type
+		multiplier := 1.0
+		switch b.Type {
+		case analyzer.BlockTypeHeader:
+			multiplier = 0.8 // Headers are quick to read
+		case analyzer.BlockTypeChart, analyzer.BlockTypeDiagram:
+			multiplier = 1.5 // Charts need time to understand
+		case analyzer.BlockTypeImage:
+			multiplier = 1.1 // Images need some time to see
+		case analyzer.BlockTypeText:
+			multiplier = 1.2 // Text needs reading time
+		}
+		weight *= multiplier
+
+		// Weight increase based on edge density (visual complexity)
+		if b.Metrics.EdgeDensity > 0 {
+			weight *= (1.0 + b.Metrics.EdgeDensity)
+		}
+
+		weights[i] = weight
+		totalWeight += weight
 	}
 
-	return dwellTime
+	// 3. Distribute time
+	durations := make([]float64, len(blocks))
+	if totalWeight == 0 {
+		// Fallback to equal distribution if weights are all zero
+		equal := availableDuration / float64(len(blocks))
+		for i := range durations {
+			durations[i] = equal
+		}
+	} else {
+		for i := range weights {
+			durations[i] = (weights[i] / totalWeight) * availableDuration
+		}
+	}
+
+	// 4. Clamping and redistribution
+	// Using a simple iterative adjustment to ensure Min/Max while preserving Total
+	for iteration := 0; iteration < 3; iteration++ {
+		surplus := 0.0
+		adjustableIndices := []int{}
+
+		for i := range durations {
+			if durations[i] < d.MinDwell {
+				surplus += durations[i] - d.MinDwell
+				durations[i] = d.MinDwell
+			} else if durations[i] > d.MaxDwell {
+				surplus += durations[i] - d.MaxDwell
+				durations[i] = d.MaxDwell
+			} else {
+				adjustableIndices = append(adjustableIndices, i)
+			}
+		}
+
+		if math.Abs(surplus) < 0.001 || len(adjustableIndices) == 0 {
+			break
+		}
+
+		// Redistribute surplus/deficit
+		fragment := surplus / float64(len(adjustableIndices))
+		for _, idx := range adjustableIndices {
+			durations[idx] += fragment
+		}
+	}
+
+	return durations
 }
 
-// generateKeyframes creates keyframes for camera movement
-func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDuration, fadeDuration, outroDuration float64) []Keyframe {
+// generateKeyframes creates keyframes for camera movement using adaptive dwell durations
+func (d *Director) generateKeyframes(blocks []analyzer.Block, durations []float64, totalDuration, fadeDuration, outroDuration float64) []Keyframe {
 	keyframes := []Keyframe{}
 
 	// Start with full view
@@ -122,9 +191,10 @@ func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDu
 
 	currentTime := 1.0 // 1s intro
 
-	// Generate keyframes for each block
+	// Generate keyframes for each block using its adaptive duration
 	for i, block := range blocks {
 		zoom := d.calculateZoom(block.Rect)
+		localDwell := durations[i]
 
 		keyframes = append(keyframes, Keyframe{
 			Time:  currentTime,
@@ -138,7 +208,7 @@ func (d *Director) generateKeyframes(blocks []analyzer.Block, dwellTime, totalDu
 			Zoom: zoom,
 		})
 
-		currentTime += dwellTime
+		currentTime += localDwell
 	}
 
 	// End of blocks, finish exactly outroDuration before the fade starts
