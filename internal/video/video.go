@@ -173,10 +173,20 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 		args = append(args, "-i", s.Path)
 	}
 
+	nextInputIdx := len(segments)
+
 	audioIndex := -1
 	if params.AudioPath != "" {
-		audioIndex = len(segments)
+		audioIndex = nextInputIdx
 		args = append(args, "-i", params.AudioPath)
+		nextInputIdx++
+	}
+
+	qrIndex := -1
+	if params.QRCodePath != "" {
+		qrIndex = nextInputIdx
+		args = append(args, "-i", params.QRCodePath)
+		nextInputIdx++
 	}
 
 	filterGraph := ""
@@ -212,6 +222,15 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 		lastOut = "[vconcat]"
 	}
 
+	// 1.5 QR Code Overlay (Persistent from audio start)
+	if qrIndex != -1 {
+		startTime := float64(audioDelayMs) / 1000.0
+		outName := "[vqr]"
+		filterGraph += fmt.Sprintf("%s[%d:v]overlay=x=main_w-overlay_w-%d:y=main_h-overlay_h-%d:enable='between(t,%f,99999)'%s;",
+			lastOut, qrIndex, params.QRMarginRight, params.QRMarginBottom, startTime, outName)
+		lastOut = outName
+	}
+
 	// 2. Аудио фильтры
 	audioOut := ""
 	if audioIndex != -1 {
@@ -229,8 +248,9 @@ func (e *FFmpegEncoder) Concatenate(ctx context.Context, segments []config.Video
 		}
 
 		if params.BackgroundAudio != "" {
-			bgIndex := audioIndex + 1
+			bgIndex := nextInputIdx
 			args = append(args, "-stream_loop", "-1", "-i", params.BackgroundAudio)
+			nextInputIdx++ // redundant but good for consistency
 
 			bgVol := params.BackgroundVolume
 			fadeInDur := 5.0

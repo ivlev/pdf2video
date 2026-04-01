@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/gen2brain/go-fitz v1.24.15
 	github.com/shirou/gopsutil/v3 v3.24.5
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/image v0.36.0
 	golang.org/x/sync v0.19.0
 	gopkg.in/yaml.v3 v3.0.1

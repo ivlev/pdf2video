@@ -50,6 +50,11 @@ type Builder struct {
 	tracePtr            *bool
 	traceColorPtr       *string
 	autoPtr             *bool
+	qrEnabledPtr        *bool
+	qrURLPtr            *string
+	qrSizePtr           *int
+	qrMarginRightPtr    *int
+	qrMarginBottomPtr   *int
 	version             string
 }
 
@@ -98,6 +103,11 @@ func (b *Builder) defineFlags() {
 	b.tracePtr = b.flags.Bool("trace", false, "Режим трассировки: показывать направление движения камеры и точки остановок")
 	b.traceColorPtr = b.flags.String("trace-color", "#FFFFFF", "Цвет текста координат в режиме трассировки (HEX: #FFFFFF, #00FF00)")
 	b.autoPtr = b.flags.Bool("auto", false, "Включить все автоматические режимы (анализ, DPI, качество)")
+	b.qrEnabledPtr = b.flags.Bool("qr-enable", true, "Включить генерацию сквозного QR-кода")
+	b.qrURLPtr = b.flags.String("qrurl", "bit.ly/4e0ngKK", "URL для генерации сквозного QR-кода (оставьте пустым для отключения)")
+	b.qrSizePtr = b.flags.Int("qr-size", 300, "Размер сквозного QR-кода (px)")
+	b.qrMarginRightPtr = b.flags.Int("qr-margin-right", 20, "Отступ QR-кода от правого края (px)")
+	b.qrMarginBottomPtr = b.flags.Int("qr-margin-bottom", 20, "Отступ QR-кода от нижнего края (px)")
 }
 
 // Build парсит флаги и собирает итоговую конфигурацию
@@ -203,6 +213,11 @@ func (b *Builder) Build(args []string) (*Config, error) {
 	}
 	c.Trace = *b.tracePtr
 	c.TraceColor = *b.traceColorPtr
+	c.QREnabled = *b.qrEnabledPtr
+	c.QRURL = *b.qrURLPtr
+	c.QRSize = *b.qrSizePtr
+	c.QRMarginRight = *b.qrMarginRightPtr
+	c.QRMarginBottom = *b.qrMarginBottomPtr
 
 	// Handle -auto shortcut
 	if *b.autoPtr {

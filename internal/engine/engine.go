@@ -410,6 +410,15 @@ func (p *VideoProject) Run(ctx context.Context) error {
 		})
 	}
 
+	if p.Config.QREnabled && p.Config.QRURL != "" {
+		fmt.Printf("[*] Создание сквозного QR-кода: %s\n", p.Config.QRURL)
+		qrPath, err := effects.GenerateQRCode(p.Config.QRURL, p.Config.QRSize, p.tempDir)
+		if err != nil {
+			return fmt.Errorf("ошибка создания qr-кода: %v", err)
+		}
+		p.Config.QRCodePath = qrPath
+	}
+
 	fmt.Println("[*] Сборка финального видео (с эффектами переходов)...")
 
 	concatStart = time.Now()
