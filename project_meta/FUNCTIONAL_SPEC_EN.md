@@ -97,6 +97,11 @@ The application automatically selects the best available encoder:
 | `-black-screen-transition`| Transition type for black screen | same as `-transition` |
 | `-bg-audio` | Path to background track | auto |
 | `-bg-volume` | Background track volume (0.0 - 1.0) | `0.3` |
+| `-qr-enable` | Enable persistent QR code generation | `true` |
+| `-qrurl` | URL for QR code generation (white on transparent background) | `bit.ly/4e0ngKK` |
+| `-qr-size` | Persistent QR code size in pixels | `300` |
+| `-qr-margin-right` | QR code margin from the right edge in pixels | `20` |
+| `-qr-margin-bottom`| QR code margin from the bottom edge in pixels | `20` |
 
 ### Quality & Performance
 | Flag | Description | Default |

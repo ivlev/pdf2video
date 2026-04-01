@@ -41,6 +41,12 @@ type Config struct {
 	BlackScreenTransition string
 	Trace                 bool
 	TraceColor            string
+	QRCodePath            string
+	QRURL                 string
+	QREnabled             bool
+	QRSize                int
+	QRMarginRight         int
+	QRMarginBottom        int
 }
 
 type VideoSegment struct {
@@ -63,6 +69,7 @@ type SegmentParams struct {
 	Debug         bool
 	Trace         bool
 	TraceColor    string
+	QRCodePath    string
 }
 
 var SupportedTransitions = []string{
